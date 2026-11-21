@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+storage
+.e2e-storage
+lib/db/generated
+public/pdfjs
+test-results
+playwright-report
+*.tsbuildinfo

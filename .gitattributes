@@ -1,0 +1,9 @@
+# Keep LF everywhere so Prisma migration checksums and shell entrypoints stay identical
+# on Windows, macOS, Linux and in Docker.
+* text=auto eol=lf
+*.sql text eol=lf
+*.pdf binary
+*.png binary
+*.webp binary
+*.mp4 binary
+*.woff2 binary

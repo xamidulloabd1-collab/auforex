@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env
+.env
+.env.*
+!.env.example
+
+# generated
+/lib/db/generated
+/public/pdfjs
+
+# uploaded files (private storage)
+/storage
+
+# tests
+/test-results
+/playwright-report
+/coverage
+
+# misc
+.DS_Store
+*.log
+
+# e2e storage
+/.e2e-storage

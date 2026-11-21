@@ -1,0 +1,563 @@
+// AU Forex Academy — database schema (PostgreSQL, Prisma 7)
+// Connection URL lives in prisma.config.ts (Prisma 7 convention).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../lib/db/generated"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+/// Platform role. SUPER_ADMIN (the founder and anyone he adds) has the single
+/// management panel at /super-admin. Subscription entitlement (PRO) is stored
+/// separately in `Subscription`.
+enum Role {
+  USER
+  SUPER_ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum SubscriptionStatus {
+  FREE
+  PRO_ACTIVE
+  PRO_EXPIRED
+  PRO_CANCELLED
+}
+
+enum ProRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SubscriptionSource {
+  ADMIN
+  PAYMENT
+}
+
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CategoryKind {
+  COURSE
+  BOOK
+}
+
+enum VideoSource {
+  UPLOAD
+  EMBED
+}
+
+enum ChallengeType {
+  QUIZ
+  CHART_ANALYSIS
+  RISK_ASSESSMENT
+  DEMO_JOURNAL
+  PSYCHOLOGY
+  MARKET_ANALYSIS
+}
+
+enum ChallengeStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  RESULTS_PUBLISHED
+}
+
+enum SubmissionStatus {
+  PENDING
+  REVIEWED
+  REJECTED
+}
+
+enum ResultOutcome {
+  PARTICIPANT
+  PASSED
+  WINNER
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identity & authentication (Better Auth compatible)
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String        @id @default(cuid())
+  name          String
+  email         String        @unique
+  /// Optional login name (sign in with email or login)
+  username      String?       @unique
+  emailVerified Boolean       @default(false)
+  image         String?
+  role          Role          @default(USER)
+  status        AccountStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  sessions              Session[]
+  accounts              Account[]
+  profile               Profile?
+  subscription          Subscription?        @relation("SubscriptionOwner")
+  grantedSubscriptions  Subscription[]       @relation("SubscriptionGrantedBy")
+  lessonProgress        LessonProgress[]
+  readingProgress       ReadingProgress[]
+  submissions           ChallengeSubmission[] @relation("SubmissionAuthor")
+  reviewedSubmissions   ChallengeSubmission[] @relation("SubmissionReviewer")
+  challengeResults      ChallengeResult[]
+  achievements          UserAchievement[]
+  auditLogs             AdminAuditLog[]      @relation("AuditActor")
+  createdChallenges     Challenge[]          @relation("ChallengeCreator")
+  proRequests           ProRequest[]         @relation("ProRequestOwner")
+  handledProRequests    ProRequest[]         @relation("ProRequestHandler")
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  /// Password hash (scrypt) for the credential provider. Never selected for the UI.
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+/// Email verification and password reset tokens.
+model VerificationToken {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+/// Rate-limit buckets for authentication endpoints (shared across instances).
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
+model Profile {
+  id              String           @id @default(cuid())
+  userId          String           @unique
+  bio             String?          @db.VarChar(500)
+  telegram        String?          @db.VarChar(64)
+  experienceLevel ExperienceLevel?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Subscription (payment-provider agnostic)
+// ─────────────────────────────────────────────────────────────
+
+model Subscription {
+  id                String              @id @default(cuid())
+  userId            String              @unique
+  plan              String              @default("PRO")
+  status            SubscriptionStatus  @default(FREE)
+  source            SubscriptionSource?
+  startedAt         DateTime?
+  /// null = no expiry (until revoked)
+  expiresAt         DateTime?
+  cancelledAt       DateTime?
+  grantedById       String?
+  note              String?             @db.VarChar(500)
+  /// Reserved for a future payment provider (Click, Payme, …)
+  provider          String?
+  providerReference String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  user      User  @relation("SubscriptionOwner", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy User? @relation("SubscriptionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@index([status, expiresAt])
+  @@unique([provider, providerReference])
+}
+
+/// "PRO sotib olish" click: the user is sent to the founder's Telegram and the
+/// request appears in the super admin panel until it is approved or rejected.
+model ProRequest {
+  id          String           @id @default(cuid())
+  userId      String
+  status      ProRequestStatus @default(PENDING)
+  /// Price shown to the user at the time of the request (in so‘m)
+  price       Int
+  oldPrice    Int?
+  currency    String           @default("so‘m")
+  channel     String           @default("TELEGRAM")
+  /// Number of times the user pressed the button while the request was pending
+  attempts    Int              @default(1)
+  note        String?          @db.VarChar(500)
+  handledById String?
+  handledAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  user      User  @relation("ProRequestOwner", fields: [userId], references: [id], onDelete: Cascade)
+  handledBy User? @relation("ProRequestHandler", fields: [handledById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Learning content
+// ─────────────────────────────────────────────────────────────
+
+model Category {
+  id        String       @id @default(cuid())
+  kind      CategoryKind
+  name      String
+  slug      String
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  courses Course[]
+  books   Book[]
+
+  @@unique([kind, slug])
+  @@index([kind, order])
+}
+
+model Course {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  title        String
+  description  String?  @db.Text
+  categoryId   String?
+  order        Int      @default(0)
+  isPublished  Boolean  @default(false)
+  thumbnailKey String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  lessons  Lesson[]
+
+  @@index([isPublished, order])
+  @@index([categoryId])
+}
+
+model Lesson {
+  id              String      @id @default(cuid())
+  courseId        String
+  slug            String      @unique
+  title           String
+  description     String?     @db.Text
+  order           Int         @default(0)
+  durationSeconds Int?
+  videoSource     VideoSource @default(UPLOAD)
+  /// Storage key of an uploaded video (private). Never sent to the client.
+  videoKey        String?     @unique
+  videoMime       String?
+  videoSize       BigInt?
+  /// Embed URL for externally hosted video (allow-listed hosts only).
+  embedUrl        String?
+  thumbnailKey    String?
+  isPublished     Boolean     @default(false)
+  publishedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  course   Course           @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  progress LessonProgress[]
+
+  @@index([courseId, order])
+  @@index([isPublished])
+}
+
+model LessonProgress {
+  id              String    @id @default(cuid())
+  userId          String
+  lessonId        String
+  positionSeconds Int       @default(0)
+  durationSeconds Int?
+  percent         Int       @default(0)
+  completedAt     DateTime?
+  lastViewedAt    DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId, lastViewedAt])
+  @@index([lessonId])
+}
+
+model Book {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  author      String?
+  description String?   @db.Text
+  pageCount   Int?
+  categoryId  String?
+  /// Storage key of the PDF (private). Never sent to the client.
+  fileKey     String    @unique
+  fileSize    Int
+  coverKey    String?
+  order       Int       @default(0)
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  category Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  progress ReadingProgress[]
+
+  @@index([isPublished, order])
+  @@index([categoryId])
+}
+
+model ReadingProgress {
+  id           String    @id @default(cuid())
+  userId       String
+  bookId       String
+  currentPage  Int       @default(1)
+  totalPages   Int?
+  percent      Int       @default(0)
+  completedAt  DateTime?
+  lastOpenedAt DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, bookId])
+  @@index([userId, lastOpenedAt])
+  @@index([bookId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Challenges (educational, simulated activities only)
+// ─────────────────────────────────────────────────────────────
+
+model Challenge {
+  id                 String          @id @default(cuid())
+  slug               String          @unique
+  title              String
+  summary            String          @db.VarChar(300)
+  description        String          @db.Text
+  type               ChallengeType
+  status             ChallengeStatus @default(DRAFT)
+  objectives         String[]
+  requirements       String[]
+  startsAt           DateTime
+  endsAt             DateTime
+  maxScore           Int             @default(100)
+  passingScore       Int?
+  allowAttachment    Boolean         @default(false)
+  showLeaderboard    Boolean         @default(true)
+  createdById        String?
+  resultsPublishedAt DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  createdBy   User?                 @relation("ChallengeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  questions   ChallengeQuestion[]
+  submissions ChallengeSubmission[]
+  results     ChallengeResult[]
+  rewards     Reward[]
+  achievements UserAchievement[]
+
+  @@index([status, startsAt])
+}
+
+model ChallengeQuestion {
+  id           String   @id @default(cuid())
+  challengeId  String
+  order        Int      @default(0)
+  prompt       String   @db.Text
+  options      String[]
+  /// Index into `options`. Never sent to participants.
+  correctIndex Int
+  explanation  String?  @db.Text
+  points       Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  challenge Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+
+  @@index([challengeId, order])
+}
+
+model ChallengeSubmission {
+  id             String           @id @default(cuid())
+  challengeId    String
+  userId         String
+  content        String?          @db.Text
+  linkUrl        String?
+  attachmentKey  String?          @unique
+  attachmentMime String?
+  /// Quiz answers: { [questionId]: optionIndex }
+  answers        Json?
+  autoScore      Int?
+  status         SubmissionStatus @default(PENDING)
+  score          Int?
+  feedback       String?          @db.Text
+  reviewedById   String?
+  reviewedAt     DateTime?
+  submittedAt    DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  challenge  Challenge        @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user       User             @relation("SubmissionAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy User?            @relation("SubmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  result     ChallengeResult?
+
+  @@unique([challengeId, userId])
+  @@index([challengeId, status])
+  @@index([userId])
+}
+
+model ChallengeResult {
+  id           String        @id @default(cuid())
+  challengeId  String
+  userId       String
+  submissionId String        @unique
+  score        Int
+  rank         Int
+  outcome      ResultOutcome @default(PARTICIPANT)
+  rewardId     String?
+  publishedAt  DateTime      @default(now())
+
+  challenge  Challenge           @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submission ChallengeSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reward     Reward?             @relation(fields: [rewardId], references: [id], onDelete: SetNull)
+
+  @@unique([challengeId, userId])
+  @@index([challengeId, rank])
+}
+
+/// Rewards are shown to users only when an admin has published them.
+model Reward {
+  id          String   @id @default(cuid())
+  challengeId String?
+  title       String
+  description String?  @db.Text
+  eligibility String   @db.Text
+  /// Optional rank range this reward applies to (inclusive).
+  rankFrom    Int?
+  rankTo      Int?
+  isPublished Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  challenge Challenge?        @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  results   ChallengeResult[]
+
+  @@index([challengeId, isPublished])
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  title       String
+  description String
+  icon        String
+  createdAt   DateTime @default(now())
+
+  awards UserAchievement[]
+}
+
+model UserAchievement {
+  id            String     @id @default(cuid())
+  userId        String
+  achievementId String
+  challengeId   String?
+  awardedAt     DateTime   @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  challenge   Challenge?  @relation(fields: [challengeId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Administration
+// ─────────────────────────────────────────────────────────────
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  summary    String?  @db.VarChar(500)
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([targetType, targetId])
+}
+
+/// Key–value site configuration (homepage copy, FAQ, founder, footer, access).
+model SiteSetting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}

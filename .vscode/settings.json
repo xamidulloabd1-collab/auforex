@@ -1,0 +1,5 @@
+{
+  // Use the project's TypeScript (the version the project is tested with) instead of the one bundled with VS Code.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

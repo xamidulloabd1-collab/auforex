@@ -1,0 +1,40 @@
+# Local production-like stack:  docker compose up --build
+# Then (first run only):        docker compose exec app npm run db:seed
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auforex
+    ports:
+      # Host port comes from DB_PORT in .env (default 5432). Use e.g. 5433 when Windows
+      # already runs its own PostgreSQL on 5432 — and the same port in DATABASE_URL.
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_APP_URL: http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/auforex
+      STORAGE_LOCAL_ROOT: /app/storage
+    ports:
+      - "3000:3000"
+    volumes:
+      - storage:/app/storage
+
+volumes:
+  pgdata:
+  storage:
