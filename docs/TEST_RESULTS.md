@@ -37,6 +37,31 @@ Environment: Linux, Node 22.23, PostgreSQL 16.15, Chrome (system) via Playwright
 | 18 | Production build succeeds | `npm run build` | ✅ |
 | — | Founder confirms Telegram payment → PRO opens | e2e "18" (request listed on the overview and in PRO arizalari with 199 000 so‘m; approve with 1 month → toast “To‘lov tasdiqlandi — PRO ochildi”; moves to *Tasdiqlangan*; the user immediately sees “PRO faol” and the library without re-login; audit entry) | ✅ |
 
+## Ready for Railway (21 Nov, v6)
+
+Problems found before the first deploy (each would have stopped it):
+
+| Problem | Effect on Railway | Fix | Verified |
+|---|---|---|---|
+| Pages such as `/challenge` were pre-rendered at build time and read the database | `next build` fails on Railway (builds have no database: “DATABASE_URL is not set”); elsewhere the pages would show frozen build-time data | Whole app renders per request (`dynamic = "force-dynamic"` in the root layout) | Build with **no `.env` and no database** → exit 0; only the sitemap stays static |
+| `VOLUME` instruction in the Dockerfile | Railway rejects the Dockerfile before building | Removed; Railway Volume mounted at `/app/storage` | — |
+| README’s `railway run npm run db:seed` | Runs on the developer’s PC: books never reach the server volume | Seed runs inside the container on every start (idempotent) | see below |
+| `NEXT_PUBLIC_APP_URL` defaulted to `http://localhost:3000` in the build | Wrong site URL compiled in | `ARG NEXT_PUBLIC_APP_URL` + fallback to `RAILWAY_PUBLIC_DOMAIN` | shell logic checked for all 4 combinations |
+
+**Production start simulated like Railway** (production build made without `.env`/database, `node scripts/start-prod.mjs`, `PORT=8080`, empty folder as `RAILWAY_VOLUME_MOUNT_PATH`, only the variables printed by `npm run deploy:env`):
+
+| Check | Result |
+|---|---|
+| Missing `BETTER_AUTH_SECRET` | stops with a clear Uzbek/English message ✅ |
+| First start | settings check → seed: founder created, 3 books copied into the volume → `Ready` ✅ |
+| `/api/health` | 200 `{"status":"ok"}`; database stopped → 503; restarted → 200 ✅ |
+| Browser | founder signs in with `FOUNDER_PASSWORD`, `/superadmin` → panel, a book from the volume renders in the reader, no page errors ✅ |
+| SIGTERM (Railway redeploy) | server stops, port released ✅ |
+| Second start | founder “ensured”, books “already present, skipped”, no duplicates ✅ |
+| `docker compose config` | valid; `DB_PORT` controls the published database port ✅ |
+
+Not run here: the Docker image build itself (Docker Hub and Prisma’s engine download are blocked in this sandbox) and `prisma migrate deploy` inside the container (the same command the previous image already used; migrations were applied with the equivalent WASM engine for the test).
+
 ## Database login rejected on the user's computer (21 Nov, v5)
 
 Log: `npm run setup` created a **new** `.env` (`localhost:5432`, `postgres`/`postgres`), and every database call then failed with *P1000 Authentication failed*. The earlier setup used port 5433, which points to another PostgreSQL occupying 5432 (typically one installed on Windows) or to a Docker database with a different password. The VS Code errors were the editor reading files while `npm install` rebuilt `node_modules`: the project type-checks with 0 errors under TypeScript 5.9 (project), 6.0.3 and 7.0.2 (current VS Code).

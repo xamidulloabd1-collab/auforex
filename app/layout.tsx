@@ -6,6 +6,13 @@ import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
+/**
+ * Every page shows live data (settings, lessons, challenges) and the signed-in user, so pages are
+ * rendered per request — never frozen at build time. This also lets the Docker build run
+ * without a database (Railway builds have no database access).
+ */
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {

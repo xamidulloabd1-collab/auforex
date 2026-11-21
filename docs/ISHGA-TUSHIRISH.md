@@ -19,7 +19,7 @@ Yangi kod **aynan ishlab turgan papkangizga** tushishi kerak. ZIP ichida `au-for
 shuning uchun uni papkangiz turgan joyga (masalan Desktop’ga) ochasiz — ichiga emas:
 
 - **PowerShell:**
-  `Expand-Archive -Force "$HOME\Downloads\au-forex-academy-v5.zip" "$HOME\Desktop"`
+  `Expand-Archive -Force "$HOME\Downloads\au-forex-academy-v6.zip" "$HOME\Desktop"`
 - **yoki Explorer:** ZIP’ni ikki marta bosing → ichidagi `au-forex-academy` papkasini Desktop’ga sudrang →
   “Replace the files in the destination” (Fayllarni almashtirish).
 
@@ -131,7 +131,11 @@ Serverga joylaganda faqat `.env` dagi `BETTER_AUTH_URL` (va `TRUSTED_ORIGINS`) m
 | Telefonda sahifa ochilmaydi | Bir xil Wi-Fi’dami? Firewall Node.js’ga ruxsat berganmi? `localhost` emas, `192.168…` manzil kerak. |
 | `Invalid environment configuration` | `npm run setup`, so‘ng `npm run doctor`. |
 
-## Serverga joylash (qisqacha)
+## Serverga joylash
+
+To‘liq qo‘llanma: [SERVERGA-JOYLASH.md](SERVERGA-JOYLASH.md) (Railway, qadamma-qadam).
+
+### Qisqacha
 
 `.env` dagi `BETTER_AUTH_URL` va `NEXT_PUBLIC_APP_URL` ni haqiqiy domenga (`https://…`) o‘zgartiring,
 keyin `npm run build` va `npm run start`, yoki `docker compose up --build`. Batafsil: README.md → “Production deployment”.

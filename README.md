@@ -169,6 +169,8 @@ See [`.env.example`](.env.example) for the full annotated list.
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:studio` | Prisma migrate dev / deploy, seed, Prisma Studio |
 | `npm run setup` | Create `.env` and generate missing secrets (safe to re-run) |
 | `npm run doctor` | Health check with fixes (Uzbek) |
+| `npm run deploy:env` | Prints the Railway variables block with freshly generated secrets |
+| `npm run start:prod` | Production start: checks → migrations → seed → `next start` (used by the Docker image) |
 | `npm run db:fix` | Finds and fixes local database problems without deleting data: starts the Docker database, moves it to a free port if another PostgreSQL owns the configured one, aligns the container password with `.env`, creates a missing database, writes the working `DATABASE_URL`/`DB_PORT` |
 | `npm run founder:password [password]` | Set/reset the founder’s password in your database |
 | `npm run admin:create -- --email … [--password …] [--name …] [--username …]` | Create or promote a super admin (PowerShell: `npx tsx scripts/create-admin.ts --email …`) |
@@ -203,19 +205,31 @@ Results of the verification run for this delivery: [`docs/TEST_RESULTS.md`](docs
 The platform stores private uploads (videos, PDFs, challenge images) on disk through the storage driver, so it needs a **host with a persistent volume**.
 
 ### Railway (recommended — you already use it)
-1. Create a PostgreSQL service and a service from this repo (the included `Dockerfile` is picked up automatically).
-2. Variables: `DATABASE_URL` (reference the Postgres service), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` = your domain (`https://…`), `STORAGE_LOCAL_ROOT=/app/storage`, SMTP variables, `ADMIN_*`.
-   `NEXT_PUBLIC_APP_URL` is also a **build argument** — set it before the first build.
-3. Attach a **Volume** mounted at `/app/storage`.
-4. Deploy. The container runs `prisma migrate deploy` on start.
-5. Run the seed once: `railway run npm run db:seed` (or the service shell).
-6. Add your custom domain; HTTPS is handled by Railway. Secure cookies and HSTS activate automatically for `https://` URLs.
+
+Step-by-step in Uzbek: [docs/SERVERGA-JOYLASH.md](docs/SERVERGA-JOYLASH.md). In short (Git Bash, in the project folder):
+
+```bash
+npm i -g @railway/cli && railway login
+railway init
+railway add --database postgres
+railway add --service web
+railway domain --service web                                # create the domain BEFORE the first build
+railway volume add --service web --mount-path /app/storage
+npm run deploy:env        # prints the Variables block with fresh secrets → web → Variables → Raw Editor
+railway up --service web
+```
+
+How the image behaves:
+* **Build** needs no database and no secrets (all pages render per request). `NEXT_PUBLIC_APP_URL` is declared as a build `ARG`; if it is not set, the generated Railway domain (`RAILWAY_PUBLIC_DOMAIN`) is used.
+* **Start** (`node scripts/start-prod.mjs`): validates the settings with readable errors → `prisma migrate deploy` (retries while the database starts) → idempotent seed (categories, settings, founder account, the 3 books into the volume; existing data untouched) → `next start` on `$PORT`. `MIGRATE_ON_START=false` / `SEED_ON_START=false` skip steps. Without a volume it warns that uploads will be lost.
+* **Health check:** `/api/health` (200 when the database answers, 503 otherwise) — set it as the service’s healthcheck path.
+* No `VOLUME` instruction in the Dockerfile: Railway rejects it; attach a Railway Volume at `/app/storage`.
+* Large videos: Railway limits a request to 15 minutes and very large single uploads have been reported to fail; prefer YouTube (unlisted) / Bunny Stream links for long lessons.
 
 ### VPS / any Docker host
 ```bash
 cp .env.example .env   # fill in values; BETTER_AUTH_URL=https://your-domain
-docker compose up -d --build
-docker compose exec app npm run db:seed
+docker compose up -d --build   # migrations and seed run automatically on start
 ```
 Put Nginx/Caddy in front for TLS. Keep `client_max_body_size` ≥ `MAX_VIDEO_UPLOAD_MB` and raise proxy timeouts for large uploads.
 
@@ -310,4 +324,3 @@ tests/              unit (Vitest), e2e (Playwright), fixtures
 | Account self-deletion | Not implemented; admins can suspend accounts |
 | HLS/adaptive video, DRM | Not implemented; MP4 progressive streaming with Range requests. For heavy traffic, consider Bunny Stream embeds |
 | `npm audit` | Reports 3 high-severity advisories, all one chain: `effect` (ReDoS, GHSA-7589-6fvf-x4pw) inside `@prisma/config`. It is used when the Prisma CLI loads `prisma.config.ts`, not when requests are served, and receives no user input. The suggested `audit fix --force` would downgrade to Prisma 6, so it is not applied; update Prisma when a patched release ships |
-# auforex

@@ -12,6 +12,8 @@
     "build": "next build",
     "prebuild": "node scripts/preflight.mjs build && node scripts/copy-pdf-worker.mjs",
     "start": "next start",
+    "start:prod": "node scripts/start-prod.mjs",
+    "deploy:env": "node scripts/deploy-env.mjs",
     "setup": "node scripts/setup.mjs",
     "doctor": "tsx scripts/doctor.ts",
     "db:fix": "node scripts/db-fix.mjs",
