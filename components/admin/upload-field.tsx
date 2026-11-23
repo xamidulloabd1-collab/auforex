@@ -37,7 +37,7 @@ function put(url: string, body: Blob, headers: Record<string, string>, onBytes: 
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => onBytes(e.loaded);
     xhr.onload = () => resolve({ status: xhr.status, etag: xhr.getResponseHeader("ETag"), text: xhr.responseText });
-    xhr.onerror = () => reject(new Error("Tarmoq xatosi"));
+    xhr.onerror = () => reject(new Error("Tarmoq yoki CORS xatosi — R2 CORS’da sayt manzili, PUT va Content-Type’ni tekshiring"));
     xhr.onabort = () => reject(new UploadCancelled());
     signal?.addEventListener("abort", () => xhr.abort(), { once: true });
     xhr.send(body);

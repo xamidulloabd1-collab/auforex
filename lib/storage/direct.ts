@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { env } from "@/lib/env";
 import { detectFileType, UPLOAD_KINDS, type UploadKind } from "./file-types";
 import { getStorage, mimeForKey, uploadLimitBytes, UploadError, STORAGE_NOT_CONFIGURED, type StoredFile } from "./index";
+import { S3Error } from "./s3";
 import { newStorageKey, type StorageArea } from "./keys";
 
 /**
@@ -68,6 +69,16 @@ export type DirectUploadPlan =
   | { mode: "single"; token: string; url: string; contentType: string }
   | { mode: "multipart"; token: string; partSize: number; urls: string[] };
 
+export function normalizeUploadCompletionError(err: unknown) {
+  if (err instanceof S3Error && [400, 404].includes(err.status)) {
+    return new UploadError("Fayl bo‘laklarini birlashtirib bo‘lmadi — qayta yuklang", 400);
+  }
+  if (err instanceof S3Error && err.status === 409) {
+    return new UploadError("Yuklash holati o‘zgargan — faylni qayta yuklang", 409);
+  }
+  return err;
+}
+
 export async function startUpload(input: { kind: UploadKind; size: number; name: string; type: string }, uid: string): Promise<DirectUploadPlan> {
   const storage = getStorage();
   if (!storage.s3) {
@@ -108,11 +119,15 @@ export async function completeUpload(token: unknown, uid: string, etags: unknown
       // Browsers can only read ETag when the bucket's CORS rules expose it.
       throw new UploadError("Bo‘laklar tasdiqlanmadi (ETag yo‘q). Bucket CORS’da ExposeHeaders: [\"ETag\"] bo‘lishi kerak.", 400);
     }
-    await s3.completeMultipartUpload(
-      t.key,
-      t.uploadId,
-      (list as string[]).map((etag, i) => ({ partNumber: i + 1, etag })),
-    );
+    try {
+      await s3.completeMultipartUpload(
+        t.key,
+        t.uploadId,
+        (list as string[]).map((etag, i) => ({ partNumber: i + 1, etag })),
+      );
+    } catch (err) {
+      throw normalizeUploadCompletionError(err);
+    }
   }
 
   const head = await s3.head(t.key);

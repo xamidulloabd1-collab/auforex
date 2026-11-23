@@ -48,7 +48,7 @@ Fayl hajmi 0 bo‘lmasligi kerak. Qayta tiklash (faqat zarurat bo‘lsa): `pg_re
 
 | Nom | Qiymat |
 |---|---|
-| `DATABASE_URL_POOLED` | `DATABASE_URL` bilan bir xil, faqat host `pooled.db.prisma.io`. Sayt so‘rovlari pooler orqali o‘tadi — “Too many connections” (P2037) qaytmaydi. Migratsiyalar baribir to‘g‘ridan-to‘g‘ri ulanishdan foydalanadi |
+| `DATABASE_URL_POOLED` | Ixtiyoriy override: `DATABASE_URL` bilan bir xil, faqat host `pooled.db.prisma.io`. Vercel’da bu o‘rnatilmasa va `DATABASE_URL` hosti `db.prisma.io` bo‘lsa, ilova pooler hostini avtomatik ishlatadi. Migratsiyalar baribir to‘g‘ridan-to‘g‘ri `DATABASE_URL`dan foydalanadi |
 | `NEXT_PUBLIC_APP_URL` va `BETTER_AUTH_URL` | `https://auforex.vercel.app` (o‘z domeningiz bo‘lsa — u). Email havolalari shu manzilga ketadi. Yo‘q bo‘lsa, Vercel’ning production manzili olinadi |
 | `TRUSTED_ORIGINS` | Saytga boshqa manzildan ham kirilsa (masalan `www.` varianti), vergul bilan |
 
@@ -80,11 +80,12 @@ O‘zgaruvchini qo‘shgach yoki o‘zgartirgach: **Deployments → oxirgi deplo
     "storage":{"driver":"s3","uploads":"ok"}}
    ```
    - `migrationsApplied` — bazadagi migratsiyalar soni (shu versiyada kamida 4).
-   - `database.hint` chiqsa — `DATABASE_URL_POOLED` qo‘shing.
+   - `database.hint` chiqsa — `DATABASE_URL_POOLED` yoki Prisma Postgres pooler hostini tekshiring.
    - `storage.uploads: "not_configured"` — S3_* kiritilmagan.
 3. Brauzerda: chiqib, qayta kiring (email va login bilan) → Dashboard ochilsin; telefondan ham.
 4. Super admin → Darslar / Kategoriyalar / Kitoblar ochilsin; kichik video yuklab, saqlab, dars sahifasida ko‘ring.
 5. Kitoblar → biror kitobni oching (PDF sahifalari ko‘rinsin).
+6. Asoschi yoki kitob muqovasi rasmi `/_next/image` orqali optimallashtirilib ochilishini tekshiring.
 
 ## Kirishda xato chiqsa
 

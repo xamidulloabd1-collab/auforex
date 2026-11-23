@@ -109,8 +109,14 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("lesson-level").selectOption("INTERMEDIATE");
     await expect(page.getByTestId("lesson-heading-preview")).toContainText(`${CATEGORY} — 5-dars`);
     const uploads: string[] = [];
+    const preflightStatuses: number[] = [];
     page.on("request", (r) => {
       if (r.method() === "PUT") uploads.push(r.url());
+    });
+    page.on("response", (response) => {
+      if (response.request().method() === "OPTIONS" && new URL(response.url()).hostname.endsWith(".r2.cloudflarestorage.com")) {
+        preflightStatuses.push(response.status());
+      }
     });
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/big.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 90_000 });
@@ -144,6 +150,10 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("lesson-access").selectOption("FREE");
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/small.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 30_000 });
+    if (S3) {
+      expect(preflightStatuses.length).toBeGreaterThan(0);
+      expect(preflightStatuses.every((status) => status >= 200 && status < 300)).toBe(true);
+    }
     await page.getByTestId("lesson-publish").click();
     await page.getByTestId("lesson-save").click();
     await page.waitForURL("**/super-admin/lessons");

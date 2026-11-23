@@ -43,17 +43,19 @@ Bucket → **Settings** → **CORS Policy** → **Add CORS policy** (yoki Edit) 
   {
     "AllowedOrigins": ["https://auforex.vercel.app"],
     "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["content-type"],
+    "AllowedHeaders": ["Content-Type"],
     "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
 ]
 ```
 
-- O‘z domeningiz bo‘lsa, uni ham qo‘shing: `["https://auforex.vercel.app", "https://auforex.uz"]`.
+- `AllowedOrigins` ichida brauzerda ochiladigan **aniq production origin** bo‘lishi shart (protokol va host, yo‘l yoki yakuniy `/` emas). O‘z domeningiz bo‘lsa, uni ham qo‘shing: `["https://auforex.vercel.app", "https://auforex.uz"]`.
 - Kompyuteringizda sinash uchun `"http://localhost:3000"` ni ham qo‘shish mumkin.
+- Brauzer `PUT`dan oldin `OPTIONS` preflight yuboradi: undagi `Access-Control-Request-Method` qiymati `PUT`, so‘raladigan sarlavha esa `Content-Type`. `OPTIONS`ni `AllowedMethods`ga qo‘shmang; qoida `PUT` va `Content-Type`ni ruxsat etishi kerak. Faqat Origin’siz oddiy `OPTIONS` so‘rovi bu preflight’ni tekshirmaydi.
 - `ExposeHeaders: ETag` **shart**: katta video bo‘laklab yuklanadi va sayt har bo‘lakning ETag’ini o‘qiydi.
   Busiz katta video yuklanayotganda “Ombor ETag qaytarmadi — bucket CORS’da ExposeHeaders: ["ETag"] kerak” xatosi chiqadi.
+- Brauzerda xato bo‘lsa, Network panelidagi `OPTIONS` so‘rovining `Origin`, `Access-Control-Request-Method` va `Access-Control-Request-Headers` qiymatlarini tekshiring. Imzoli URL’dagi query parametrlarni (jumladan signature’ni) hech kimga yubormang.
 
 ## 4. Tugallanmagan yuklashlarni tozalash
 
@@ -89,7 +91,7 @@ Keyin **Deployments** → oxirgi deploy → **⋯ → Redeploy**.
 
 | Belgi | Sabab va yechim |
 |---|---|
-| Yuklash boshida “Tarmoq xatosi” | CORS’da sayt manzili yo‘q yoki `PUT` ruxsat etilmagan (3-qadam). Manzil `https://` bilan, oxirida `/` siz yozilsin |
+| Yuklash boshida “Tarmoq yoki CORS xatosi” | CORS’da aniq sayt manzili, `PUT` yoki `Content-Type` ruxsat etilmagan (3-qadam); brauzer preflight javobini tekshiring |
 | “Ombor ETag qaytarmadi …” | CORS’da `"ExposeHeaders": ["ETag"]` yo‘q |
 | “Fayl omboriga ulanishda xato (S3 kalitlari noto‘g‘ri …)” | Kalit noto‘g‘ri yoki boshqa bucket’ga berilgan; tokenni qayta yarating va Vercel’da yangilang |
 | “Fayl omboriga ulanishda xato (S3_BUCKET nomi noto‘g‘ri)” | `S3_BUCKET` Cloudflare’dagi nom bilan aynan bir xil bo‘lsin |

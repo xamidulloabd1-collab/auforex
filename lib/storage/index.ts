@@ -318,17 +318,62 @@ function withBundled(inner: StorageDriver): StorageDriver {
 
 /* ------------------------------------------------------------------ selection */
 
-export function s3ConfigFromEnv(source: Record<string, string | undefined> = process.env): S3Config | null {
-  const { S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY } = source;
-  if (!S3_ENDPOINT || !S3_BUCKET || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY) return null;
+
+export function s3ConfigFromEnv(
+  source: Record<string, string | undefined> = process.env,
+): S3Config | null {
+  const {
+    S3_ENDPOINT,
+    S3_BUCKET,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY,
+  } = source;
+
+  const endpoint = S3_ENDPOINT?.trim();
+  const bucket = S3_BUCKET?.trim();
+  const accessKeyId = S3_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = S3_SECRET_ACCESS_KEY?.trim();
+
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    return null;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new Error("[storage] S3_ENDPOINT URL formati noto‘g‘ri");
+  }
+
+  if (
+    url.protocol !== "https:" ||
+    !url.hostname.endsWith(".r2.cloudflarestorage.com") ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash ||
+    url.username ||
+    url.password ||
+    url.port
+  ) {
+    throw new Error(
+      "[storage] S3_ENDPOINT Cloudflare R2 S3 API manzili bo‘lishi kerak",
+    );
+  }
+
+  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(bucket)) {
+    throw new Error("[storage] S3_BUCKET nomi noto‘g‘ri");
+  }
+
   return {
-    endpoint: S3_ENDPOINT,
-    bucket: S3_BUCKET,
-    accessKeyId: S3_ACCESS_KEY_ID,
-    secretAccessKey: S3_SECRET_ACCESS_KEY,
-    region: source.S3_REGION || "auto",
+    endpoint: url.origin,
+    bucket,
+    accessKeyId,
+    secretAccessKey,
+    region: source.S3_REGION?.trim() || "auto",
   };
 }
+
 
 /** Vercel runs the app from a read-only file system: files can only be kept in object storage. */
 export function isReadOnlyHost() {

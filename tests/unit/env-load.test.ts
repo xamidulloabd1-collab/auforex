@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { classifyDbError, explainDbFailure, probeDb } from "../../scripts/lib/db-probe.mjs";
 import {
@@ -68,7 +69,7 @@ describe(".env files are read the way Next.js reads them", () => {
       ".env.local": 'DATABASE_URL="postgresql://u:p@localhost:5432/from_local"\n',
       ".env.production.local": 'DATABASE_URL="postgresql://u:p@localhost:5432/from_prod_local"\n',
     });
-    const loader = path.resolve("scripts/lib/env-load.mjs");
+    const loader = pathToFileURL(path.resolve("scripts/lib/env-load.mjs")).href;
     const script = `const m = await import(${JSON.stringify(loader)}); const files = m.loadProjectEnv(${JSON.stringify(root)}, process.argv[1]); console.log(JSON.stringify({ files, db: process.env.DATABASE_URL.split("/").pop() }));`;
     const run = (mode: string) =>
       JSON.parse(

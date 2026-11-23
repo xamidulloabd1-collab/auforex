@@ -51,6 +51,25 @@ describe("AWS Signature V4", () => {
     expect(url.searchParams.get("X-Amz-Signature")).toBe("aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404");
   });
 
+  it("presigns a path-style R2 PUT and binds the exact Content-Type", () => {
+    const rawUrl = "https://account.r2.cloudflarestorage.com/auforex-media/founder/portrait.png";
+    const signed = new URL(presignUrl(config, "PUT", rawUrl, {
+      expiresSeconds: 3600,
+      headers: { "content-type": "image/png" },
+      now,
+    }));
+    const otherType = new URL(presignUrl(config, "PUT", rawUrl, {
+      expiresSeconds: 3600,
+      headers: { "content-type": "application/octet-stream" },
+      now,
+    }));
+
+    expect(signed.pathname).toBe("/auforex-media/founder/portrait.png");
+    expect(signed.searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host");
+    expect(signed.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+    expect(signed.searchParams.get("X-Amz-Signature")).not.toBe(otherType.searchParams.get("X-Amz-Signature"));
+  });
+
   it("encodes like SigV4 expects", () => {
     expect(uriEncode("a b/c~d*é", true)).toBe("a%20b/c~d%2A%C3%A9");
     expect(uriEncode("a/b")).toBe("a%2Fb");

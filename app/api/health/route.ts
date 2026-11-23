@@ -3,7 +3,7 @@ import { checkEnv } from "@/lib/env";
 import { ModelName } from "@/lib/db/generated/internal/prismaNamespaceBrowser";
 import { appUrl } from "@/lib/env";
 import { storageStatus } from "@/lib/storage";
-import { poolSize } from "@/lib/db/prisma";
+import { poolSize, usesPooledDatabase } from "@/lib/db/prisma";
 
 /** Which address sign-in links use, and whether this request came to the same one (no secrets). */
 function siteReport(request: Request) {
@@ -34,7 +34,7 @@ function connectionFailure(err: unknown): "timeout" | "auth" | "dns" | "refused"
 
 /** Connection mode only — never the address or credentials. */
 function databaseReport() {
-  const pooled = Boolean(process.env.DATABASE_URL_POOLED);
+  const pooled = usesPooledDatabase();
   let directPrismaPostgres = false;
   try {
     directPrismaPostgres = !pooled && new URL(process.env.DATABASE_URL ?? "").hostname === "db.prisma.io";
