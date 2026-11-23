@@ -1,3 +1,123 @@
+# Test results — 23 November 2026, round 2 (local sign-in 503, database timeouts, missing package)
+
+The three reported errors were reproduced on a `next dev` server **before** changing code, then re-tested after the fix.
+
+| Reported error | Reproduced with | Before | After |
+|---|---|---|---|
+| `BETTER_AUTH_SECRET is required`, sign-up → 503 | valid secret in `.env`, `BETTER_AUTH_SECRET=""` in `.env.local` (what `vercel env pull` writes for Sensitive variables) | pre-start check **passed** (it read only `.env`); sign-up 503; log told to fix Vercel settings | pre-start check stops: “`.env.local` faylida bo‘sh va `.env` dagi qiymatni bekor qilmoqda … qatorini o‘chiring”; log names the local cause and `npm run doctor` |
+| same, secret only in `.env.production.local` | — | passed the check, 503 at runtime | “faqat `.env.production.local` da bor — `npm run dev` bu faylni o‘qimaydi” |
+| `timeout … when trying to connect` | `.env.local` → a port that accepts TCP and never answers | check **passed**; sign-in waited 11 s → generic 500 “Serverda vaqtinchalik xatolik” | check fails in 6 s naming the address (host:port/db only) and the file it came from; sign-in → **503 `DATABASE_UNAVAILABLE`** with a clear message; `/api/health` gives `reason: "timeout"` |
+| `Cannot find module '@vercel/functions'` | package removed from `node_modules` (= `npm install` not run after the update) | `tsc`: TS2307 in `lib/db/prisma.ts` | pre-start check: “O‘rnatilmagan paketlar: @vercel/functions … Bajaring: npm install” |
+| Prisma CLI used another database than the site | `.env` local DB, `.env.local` remote DB | `prisma migrate …` read only `.env` | Prisma reads the same files as Next.js and prints `[prisma] Baza: host:port/db (o‘qilgan: .env.local, .env)`; `migrate reset` on a remote DB is refused |
+
+With correct settings, on the same `next dev` server: sign-up 200 → session shows the user (role USER) → sign-out 200 →
+session `null` → wrong password 401 → sign-in 200 → `/super-admin` as a user 404 → admin sign-in 200 → `/super-admin` 200
+→ founder sign-in by username 200.
+
+Found while re-running e2e: pressing “Bekor qilish” while an upload was still being prepared was ignored (local-disk mode)
+and the file was uploaded anyway. Fixed; covered by a new e2e step (no data is sent after the cancel).
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` (`npm run typecheck`) | ✅ 0 errors |
+| `npm run lint` | ✅ 0 errors, 5 warnings (unchanged, pre-existing) |
+| Unit tests | ✅ 71 / 71 (11 new: env file order and shadowing, child-process load check, credential-free DB description, timeout classification, a silent port reported as timeout, missing packages) |
+| `npm run build` | ✅ |
+| E2E, local disk | ✅ 34 / 34 |
+| E2E, Vercel mode + S3 bucket | ✅ 34 / 34; 0 unfinished multipart uploads |
+| `npx prisma validate`, `prisma generate`, `prisma migrate status` with the new config | ✅ |
+
+**Not tested:** auforex.vercel.app with this code (not deployed — GitHub `main` is still `d4cc2cf`), the user’s own `.env`
+files and network path to Prisma Postgres.
+
+---
+
+# Test results — 23 November 2026 (production stabilization: sign-in, database connections, object storage, video LMS)
+
+Environment: Linux, Node 22.23, PostgreSQL 16, Chrome (system) via Playwright, production build (`next build` + `next start`)
+on a freshly created database with all four migrations applied and the seed run. Every run below was executed; nothing is
+reported from a build alone.
+
+Two server modes were tested with the same build:
+- **Local disk** — as on Railway/Docker.
+- **Vercel mode** — `VERCEL=1` (read-only disk rules, 4 MiB response cap, pool of 2) with an S3 emulator (`moto_server`)
+  as the bucket. The bucket had the exact CORS policy from `docs/FAYL-SAQLASH.md` (only the site origin, `PUT/GET/HEAD`,
+  `content-type`, `ExposeHeaders: ETag`); the emulator enforces CORS preflights (a foreign origin gets 403).
+
+## Summary
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ 0 errors |
+| `npm run lint` | ✅ 0 errors, 5 warnings (React Compiler notes on React Hook Form `watch` and two unused-expression notes in `scripts/doctor.ts`; all existed before) |
+| `npm run build` | ✅ success |
+| Unit tests (`npm test`) | ✅ 60 / 60 (incl. AWS SigV4 signatures checked against AWS reference values, `.env.example` validated as shipped) |
+| E2E, local disk | ✅ 34 / 34 passed (3.2 min) |
+| E2E, Vercel mode + S3 bucket | ✅ 34 / 34 passed (3.0 min). Bucket afterwards: books, covers, founder portrait and videos present; **0 unfinished multipart uploads** (cancelled upload was aborted in the bucket) |
+| Database connections (Vercel mode) | ✅ 80 concurrent page/API requests → 80 × 200 in 2.4 s; at most 2 connections from the app; no P2037 |
+| Migration `20261123120000_lesson_category_number_access` | ✅ applied (in one transaction) to a database built from the three earlier migrations with: course A numbers 1,1,2 → 1,2,3; course B 0,1 → 1,2; course C 1,3,7 → **unchanged**; categories copied from courses; both progress rows identical before/after; a duplicate number afterwards is refused by the new unique index |
+| Vercel build script (`npm run build:vercel`) | ✅ missing `BETTER_AUTH_SECRET` → build stops with the fix; `prisma+postgres://` URL → stops with the fix; production on an empty database → site URL taken from `VERCEL_PROJECT_PRODUCTION_URL`, 4 migrations applied, **no seed run** (0 users), build succeeds. (Prisma CLI replaced by a stand-in that applies the same migrations, because engine downloads are blocked in the test environment.) |
+| `/api/health` | ✅ `status: ok`, `migrationsApplied: 4`, `database: {pooled, poolMax: 2}`, `storage: {driver: "s3", uploads: "ok"}` — no secrets in the output |
+
+**Not tested (no access from the test environment):** the live site auforex.vercel.app, the real Prisma Postgres database
+and a real Cloudflare R2 bucket. See `docs/VERCEL.md` → “Deploy’dan keyin tekshirish” for the checks to run after deploy.
+
+## End-to-end tests (both modes)
+
+| Spec | Test |
+|---|---|
+| `auth.spec.ts` | register while a cookie is already set, session survives reload |
+| `auth.spec.ts` | sign in again with cookies present (the production failure), wrong password rejected |
+| `auth.spec.ts` | cross-site requests stay rejected |
+| `auth.spec.ts` | protected pages and admin area |
+| `auth.spec.ts` | sign in on a phone |
+| `platform.spec.ts` | 1. Guest opens the homepage |
+| `platform.spec.ts` | 2. Users register successfully (duplicate email is rejected) |
+| `platform.spec.ts` | 3. User logs out and logs in |
+| `platform.spec.ts` | 15a. Admin creates a course, uploads a lesson video and publishes it |
+| `platform.spec.ts` | 15b. Admin creates and publishes a quiz challenge |
+| `platform.spec.ts` | 4-7. FREE user sees the PRO gate with the price; “PRO sotib olish” opens Telegram and files a request |
+| `platform.spec.ts` | 9. Admin grants PRO to a user |
+| `platform.spec.ts` | 10-11. PRO user watches a lesson (range streaming) and progress is tracked |
+| `platform.spec.ts` | 12. PRO user opens an authorised PDF in the reader |
+| `platform.spec.ts` | 8. FREE users and guests cannot fetch protected files by direct URL |
+| `platform.spec.ts` | 13. FREE user cannot take part in a PRO challenge; PRO user can |
+| `platform.spec.ts` | 14. Non-admins cannot access admin routes or APIs |
+| `platform.spec.ts` | 15c. Admin unpublishes content, edits the founder profile and revokes PRO |
+| `platform.spec.ts` | Super admin: founder signs in with a login and manages the team, founder profile and audit log |
+| `platform.spec.ts` | 16. Phone layout: bottom tab bar, menu sheet, no zoom-on-focus, no horizontal scroll |
+| `platform.spec.ts` | 17. TradingView page loads the widget or shows a helpful fallback |
+| `platform.spec.ts` | 18. Super admin confirms the Telegram payment → PRO opens for that user |
+| `routes.spec.ts` | public pages open for guests |
+| `routes.spec.ts` | account pages send guests to sign-in |
+| `routes.spec.ts` | admin reaches every Super admin page, including detail pages |
+| `routes.spec.ts` | key pages fit a phone screen |
+| `video-lms.spec.ts` | categories: create, rename, reorder, refuse deleting one in use, delete unused |
+| `video-lms.spec.ts` | lessons: number + category heading, large upload in parts, duplicate number refused, invalid file rejected |
+| `video-lms.spec.ts` | uploads: cancel stops and cleans up; a dropped part is retried |
+| `video-lms.spec.ts` | FREE user: free lesson plays, PRO lesson locked; the video API refuses direct calls |
+| `video-lms.spec.ts` | guest: catalogue visible with the subscription offer, media API answers 401 |
+| `video-lms.spec.ts` | PRO user: numbered heading, video plays (from the bucket when S3 is on), progress saved |
+| `video-lms.spec.ts` | founder portrait: upload, save, shown on the public Founder page |
+| `video-lms.spec.ts` | books: PDF upload persists and opens; check-files relinks a seeded book whose file is gone |
+
+Key assertions:
+- **Sign-in with cookies already present** (the production failure “Amalni bajarib bo‘lmadi”) succeeds; a request from a
+  foreign origin is still rejected with 403; non-admins get 404 on `/super-admin`; upload API refuses non-admins.
+- **Lessons**: category is required; heading reads “<Kategoriya> — N-dars”; a duplicate number in the same course is
+  refused with the name of the lesson that has it; ↑/↓ swaps numbers; a 13 MB video uploads in 10 MiB parts with progress;
+  a renamed non-video file is rejected and removed from storage.
+- **Uploads**: “Bekor qilish” stops the upload and aborts it in the bucket; a dropped part is retried and the upload completes.
+- **Access**: guests see the catalogue and the PRO offer, media API → 401; FREE users play free lessons, PRO lessons show the
+  lock and the video API → 403; PRO users play in sequence; in Vercel mode the video answers `302` (`private, no-store`) to a
+  presigned bucket URL that serves `206` ranges.
+- **Books**: uploaded PDF persists and opens; “Tekshirish” relinks a seeded book whose stored file is missing to the copy
+  shipped with the app.
+- **Routes**: every public, account and Super admin page (including detail pages) opens without an error page or page
+  error; account pages send guests to sign-in; 7 key pages have no horizontal scroll at 375 px.
+
+---
+
 # Test results — 21 November 2026 (fix round: setup on a new computer, /superadmin, phone over Wi-Fi)
 
 Environment: Linux, Node 22.23, PostgreSQL 16.15, Chrome (system) via Playwright 1.65, production build (`next build` + `next start`) on a freshly created database with all three migrations applied and the seed run.

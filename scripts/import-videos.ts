@@ -306,13 +306,20 @@ async function main() {
             const speed = sent / Math.max(1, (Date.now() - started) / 1000);
             process.stdout.write(`\r${label}: ${Math.floor((sent / r.size) * 100)}% · ${mb(speed)}/s   `);
           });
+          // The position in the folder, so a lesson re-uploaded later still lands in its place —
+          // unless that number is already taken in this course (numbers are unique per course).
+          let order = index + 1;
+          if (await prisma.lesson.findFirst({ where: { courseId: dbCourse.id, order }, select: { id: true } })) {
+            const last = await prisma.lesson.aggregate({ where: { courseId: dbCourse.id }, _max: { order: true } });
+            order = (last._max.order ?? 0) + 1;
+            console.log(`\n   ! ${index + 1}-dars raqami band — ${order}-dars sifatida qo‘shiladi`);
+          }
           await prisma.lesson.create({
             data: {
               courseId: dbCourse.id,
               slug: await uniqueSlug(prisma, "lesson", r.title),
               title: r.title,
-              // The position in the folder, so a lesson re-uploaded later still lands in its place.
-              order: index + 1,
+              order,
               durationSeconds: r.duration,
               videoSource: "EMBED",
               embedUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${guid.toLowerCase()}`,

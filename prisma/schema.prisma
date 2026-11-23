@@ -266,6 +266,7 @@ model Category {
 
   courses Course[]
   books   Book[]
+  lessons Lesson[]
 
   @@unique([kind, slug])
   @@index([kind, order])
@@ -293,10 +294,16 @@ model Course {
 model Lesson {
   id              String      @id @default(cuid())
   courseId        String
+  /// Topic shown with the number, e.g. "Texnik tahlil — 5-dars" (COURSE-kind category).
+  categoryId      String?
   slug            String      @unique
   title           String
   description     String?     @db.Text
+  /// Lesson number inside the course ("5-dars"); unique per course, entered by the admin.
   order           Int         @default(0)
+  level           ExperienceLevel?
+  /// Free lessons are open to every signed-in user; the rest need PRO.
+  isFree          Boolean     @default(false)
   durationSeconds Int?
   videoSource     VideoSource @default(UPLOAD)
   /// Storage key of an uploaded video (private). Never sent to the client.
@@ -312,9 +319,11 @@ model Lesson {
   updatedAt       DateTime    @updatedAt
 
   course   Course           @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  category Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   progress LessonProgress[]
 
-  @@index([courseId, order])
+  @@unique([courseId, order])
+  @@index([categoryId])
   @@index([isPublished])
 }
 

@@ -2,12 +2,29 @@
  * Full local health check:  npm run doctor
  * Explains what is wrong (in Uzbek) and the exact command that fixes it.
  */
-import "dotenv/config";
 import { existsSync, readdirSync } from "node:fs";
 import { access, constants, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { checkEnv } from "../lib/env-schema";
 import { isWeakSecret, localDbPort } from "./lib/env-file.mjs";
+import { describeDbUrl, describeEnv, explainMissing, loadProjectEnv } from "./lib/env-load.mjs";
+import { missingPackages } from "./lib/packages.mjs";
+
+// Read the .env files exactly as `npm run dev` does, and remember where each setting came from.
+const ENV_KEYS = [
+  "DATABASE_URL",
+  "DATABASE_URL_POOLED",
+  "DIRECT_URL",
+  "BETTER_AUTH_SECRET",
+  "BETTER_AUTH_URL",
+  "NEXT_PUBLIC_APP_URL",
+  "S3_ENDPOINT",
+  "S3_BUCKET",
+  "S3_ACCESS_KEY_ID",
+  "S3_SECRET_ACCESS_KEY",
+];
+const envReport = describeEnv({ keys: ENV_KEYS, mode: "development", initialEnv: { ...process.env } });
+loadProjectEnv(process.cwd(), "development");
 
 type Result = { ok: boolean | "warn"; title: string; fix?: string };
 const results: Result[] = [];
@@ -19,7 +36,13 @@ const root = process.cwd();
 
 function describeDbError(err: unknown): { title: string; fix: string } {
   const text = `${String(err)} ${JSON.stringify(err, Object.getOwnPropertyNames(err ?? {}))} ${String((err as { cause?: unknown })?.cause ?? "")}`;
-  if (/ECONNREFUSED|P1001|Can't reach database|connect ETIMEDOUT/i.test(text)) {
+  if (/timeout exceeded|connection timeout|Connection terminated|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(text)) {
+    return {
+      title: "Baza javob bermadi (ulanish vaqti tugadi) — bu kompyuterdan baza serveriga yo‘l yo‘q",
+      fix: "Masofadagi baza bo‘lsa: internet/provayder yoki firewall 5432-portni yopmaganini tekshiring (PowerShell: Test-NetConnection <host> -Port 5432). Lokal ishlash uchun: npm run db:fix (Docker).",
+    };
+  }
+  if (/ECONNREFUSED|P1001|Can't reach database/i.test(text)) {
     return {
       title: "PostgreSQL’ga ulanib bo‘lmadi (server ishlamayapti yoki port noto‘g‘ri)",
       fix: "Avtomatik tuzatish:  npm run db:fix   (Docker Desktop ochiq bo‘lsin)",
@@ -55,13 +78,26 @@ async function main() {
     ? ok("PDF o‘quvchi (pdf.js worker) joyida")
     : fail("public/pdfjs/pdf.worker.min.mjs yo‘q — kitoblar ochilmaydi", "node scripts/copy-pdf-worker.mjs");
 
-  // 3. Environment
-  if (!existsSync(path.join(root, ".env"))) fail(".env fayli yo‘q", "npm run setup");
-  else ok(".env fayli bor");
+  const missingPkgs = missingPackages(root);
+  if (missingPkgs.length) fail(`O‘rnatilmagan paketlar: ${missingPkgs.join(", ")}`, "npm install  (package.json yangilangan)");
+  else ok("Barcha paketlar o‘rnatilgan");
+
+  // 3. Environment — which file each setting comes from (values are never printed)
+  if (!envReport.files.length) fail(".env fayli yo‘q", "npm run setup");
+  else ok(`npm run dev o‘qiydigan .env fayllari (ustuvorlik bo‘yicha): ${envReport.files.join(" → ")}`);
+  const sources = ENV_KEYS.filter((k) => envReport.keys[k]!.state === "set").map((k) => `${k} ← ${envReport.keys[k]!.source}`);
+  if (sources.length) ok(`Qiymat manbalari: ${sources.join(", ")}`);
+  for (const key of ENV_KEYS) {
+    const info = envReport.keys[key]!;
+    if (info.state === "empty" && info.shadows && key !== "DATABASE_URL" && key !== "BETTER_AUTH_SECRET") warn(explainMissing(key, info, "development"));
+  }
   const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) fail("DATABASE_URL bo‘sh", "npm run setup, so‘ng .env’da DATABASE_URL’ni to‘ldiring.");
-  if (isWeakSecret(process.env.BETTER_AUTH_SECRET)) fail("BETTER_AUTH_SECRET namunaviy yoki qisqa", "npm run setup  (yangi maxfiy kalit yaratadi)");
-  else ok("BETTER_AUTH_SECRET o‘rnatilgan");
+  if (!dbUrl) fail(explainMissing("DATABASE_URL", envReport.keys.DATABASE_URL!, "development"), "npm run setup, so‘ng npm run db:fix");
+  if (!process.env.BETTER_AUTH_SECRET?.trim()) {
+    fail(explainMissing("BETTER_AUTH_SECRET", envReport.keys.BETTER_AUTH_SECRET!, "development"), "npm run setup  (yangi maxfiy kalit yaratadi)");
+  } else if (isWeakSecret(process.env.BETTER_AUTH_SECRET)) {
+    fail(`BETTER_AUTH_SECRET namunaviy yoki qisqa (manba: ${envReport.keys.BETTER_AUTH_SECRET!.source})`, "npm run setup  (yangi maxfiy kalit yaratadi)");
+  } else ok(`BETTER_AUTH_SECRET o‘rnatilgan (manba: ${envReport.keys.BETTER_AUTH_SECRET!.source})`);
   const urlPort = localDbPort(dbUrl);
   const composePort = process.env.DB_PORT || "5432";
   if (urlPort && urlPort !== composePort) {
@@ -89,12 +125,17 @@ async function main() {
   }
 
   // 5. Database
-  if (dbUrl) {
+  // The site connects through DATABASE_URL_POOLED when it is set, otherwise DATABASE_URL.
+  const runtimeKey = process.env.DATABASE_URL_POOLED?.trim() ? "DATABASE_URL_POOLED" : "DATABASE_URL";
+  const runtimeUrl = process.env[runtimeKey]?.trim();
+  if (runtimeUrl) {
+    const db = describeDbUrl(runtimeUrl);
     const { createScriptPrisma } = await import("../prisma/seed-helpers");
-    const prisma = createScriptPrisma();
+    const prisma = createScriptPrisma(runtimeUrl);
     try {
       await prisma.$queryRawUnsafe("SELECT 1");
-      ok("PostgreSQL’ga ulanish");
+      ok(`PostgreSQL’ga ulanish: ${db.target} (${runtimeKey}, manba: ${envReport.keys[runtimeKey]!.source})`);
+      if (db.kind !== "local") warn(`Lokal sayt masofadagi bazaga ulangan (${db.host}) — production bo‘lsa, lokal amallar haqiqiy saytga yoziladi`, "Lokal ishlash uchun alohida baza: npm run db:fix");
 
       const dir = path.join(root, "prisma", "migrations");
       const expected = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
@@ -125,10 +166,16 @@ async function main() {
         else ok(`Founder hisobi “${username}” — super admin. Parolni unutgan bo‘lsangiz: npm run founder:password`);
         if (admins === 0) fail("Faol super admin yo‘q", "npm run founder:password");
         if (books.length === 0) warn("Kutubxonada kitob yo‘q", "npm run db:seed  (3 ta kitob qo‘shiladi)");
-        else {
+        else if (process.env.S3_BUCKET?.trim() || process.env.STORAGE_DRIVER === "s3") {
+          ok(`Kitoblar: ${books.length} ta (fayllar S3 omborida — tekshirish: Super admin → Kitoblar → Tekshirish)`);
+        } else {
           const missing = [];
           for (const b of books) {
-            if (!existsSync(path.join(storageRoot, b.fileKey))) missing.push(b.title);
+            // bundled/… files ship with the app (prisma/seed-assets), everything else lives in storage/.
+            const file = b.fileKey.startsWith("bundled/")
+              ? path.join(root, "prisma", "seed-assets", b.fileKey.slice("bundled/".length))
+              : path.join(storageRoot, b.fileKey);
+            if (!existsSync(file)) missing.push(b.title);
           }
           if (missing.length) {
             fail(`Bazada bor, lekin fayli yo‘q kitoblar: ${missing.join("; ")}`, "Super admin → Kitoblar’da faylni qayta yuklang yoki storage papkasini qaytaring.");

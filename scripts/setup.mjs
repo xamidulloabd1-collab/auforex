@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getEnvValue, isWeakSecret, localDbPort, setEnvValue, strongPassword } from "./lib/env-file.mjs";
+import { dotEnvOverrideWarnings } from "./lib/env-load.mjs";
 
 const root = process.cwd();
 const envPath = path.join(root, ".env");
@@ -42,6 +43,7 @@ const login = getEnvValue(text, "FOUNDER_USERNAME") || "asadbek";
 console.log("");
 console.log(created ? "✓ .env fayli .env.example’dan yaratildi" : "✓ .env fayli mavjud (bor qiymatlar o‘zgartirilmadi)");
 for (const c of changes) console.log(`✓ ${c}`);
+for (const w of dotEnvOverrideWarnings(root, ["BETTER_AUTH_SECRET", "DATABASE_URL", "DATABASE_URL_POOLED"])) console.log(`⚠  ${w}`);
 console.log("");
 console.log("Founder (super admin) kirishi — seed’dan keyin ishlaydi:");
 console.log(`  login : ${login}`);

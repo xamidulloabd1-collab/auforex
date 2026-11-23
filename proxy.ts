@@ -21,6 +21,8 @@ export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDev = process.env.NODE_ENV === "development";
   const isHttps = (process.env.NEXT_PUBLIC_APP_URL ?? "").startsWith("https://");
+  // Object storage (R2/S3): the browser uploads to it and plays videos from short-lived links.
+  const storage = storageOrigin(process.env.S3_ENDPOINT);
 
   const csp = [
     "default-src 'self'",
@@ -28,8 +30,8 @@ export function proxy(request: NextRequest) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    "media-src 'self' blob:",
-    "connect-src 'self'" + (isDev ? " ws: wss:" : ""),
+    "media-src 'self' blob:" + (storage ? ` ${storage}` : ""),
+    "connect-src 'self'" + (storage ? ` ${storage}` : "") + (isDev ? " ws: wss:" : ""),
     "worker-src 'self' blob:",
     "frame-src https://s.tradingview.com https://www.tradingview-widget.com https://www.tradingview.com https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com https://iframe.mediadelivery.net https://player.mediadelivery.net",
     "object-src 'none'",
@@ -63,3 +65,13 @@ export const config = {
     },
   ],
 };
+
+function storageOrigin(endpoint: string | undefined) {
+  if (!endpoint) return null;
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === "https:" || url.hostname === "localhost" || url.hostname === "127.0.0.1" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}

@@ -53,12 +53,22 @@ export async function fileResponse(
       headers.set("Content-Range", `bytes */${info.size}`);
       return new Response(null, { status: 416, headers });
     }
+    // Serverless hosts cap a response (Vercel 4.5 MB): send at most one slice; clients (video,
+    // the PDF reader) continue with the next range — a server may answer with a shorter range.
+    if (storage.maxResponseBytes && end - start + 1 > storage.maxResponseBytes) end = start + storage.maxResponseBytes - 1;
     headers.set("Content-Range", `bytes ${start}-${end}/${info.size}`);
     headers.set("Content-Length", String(end - start + 1));
     if (request.method === "HEAD") return new Response(null, { status: 206, headers });
     return new Response(storage.read(opts.key, { start, end }), { status: 206, headers });
   }
 
+  if (storage.maxResponseBytes && info.size > storage.maxResponseBytes && request.method !== "HEAD") {
+    // Too large for one response on this host: answer with the first slice as a range.
+    const end = storage.maxResponseBytes - 1;
+    headers.set("Content-Range", `bytes 0-${end}/${info.size}`);
+    headers.set("Content-Length", String(end + 1));
+    return new Response(storage.read(opts.key, { start: 0, end }), { status: 206, headers });
+  }
   headers.set("Content-Length", String(info.size));
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
   return new Response(storage.read(opts.key), { status: 200, headers });

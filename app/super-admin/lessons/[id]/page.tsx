@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { ExternalLinkIcon } from "lucide-react";
 import { requireAdmin } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { isReadOnlyHost, uploadLimitBytes } from "@/lib/storage";
+import { lessonFormOptions } from "@/lib/data/lesson-admin";
+import { storageStatus, uploadLimitBytes } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { AdminTitle } from "@/components/admin/admin-title";
 import { LessonForm } from "@/components/admin/lesson-form";
@@ -11,10 +12,7 @@ import { LessonForm } from "@/components/admin/lesson-form";
 export default async function EditLessonPage({ params }: PageProps<"/super-admin/lessons/[id]">) {
   await requireAdmin();
   const { id } = await params;
-  const [lesson, courses] = await Promise.all([
-    prisma.lesson.findUnique({ where: { id } }),
-    prisma.course.findMany({ orderBy: [{ order: "asc" }, { createdAt: "asc" }], select: { id: true, title: true } }),
-  ]);
+  const [lesson, options] = await Promise.all([prisma.lesson.findUnique({ where: { id } }), lessonFormOptions()]);
   if (!lesson) notFound();
   return (
     <>
@@ -24,22 +22,25 @@ export default async function EditLessonPage({ params }: PageProps<"/super-admin
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href={`/lessons/${lesson.slug}`} target="_blank">
-              Ko‘rish <ExternalLinkIcon />
+              Oldindan ko‘rish <ExternalLinkIcon />
             </Link>
           </Button>
         }
       />
       <LessonForm
-        courses={courses}
+        {...options}
         maxVideoBytes={uploadLimitBytes("video")}
-        uploadsAvailable={!isReadOnlyHost()}
+        uploadsAvailable={storageStatus().uploads}
         lesson={{
           id: lesson.id,
           title: lesson.title,
           slug: lesson.slug,
           description: lesson.description ?? "",
           courseId: lesson.courseId,
+          categoryId: lesson.categoryId ?? "",
           order: lesson.order,
+          level: lesson.level,
+          isFree: lesson.isFree,
           durationSeconds: lesson.durationSeconds,
           videoSource: lesson.videoSource,
           videoKey: lesson.videoKey,

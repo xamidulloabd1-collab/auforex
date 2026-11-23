@@ -93,6 +93,13 @@ export function BookForm({
     }
   }
 
+  /** Never fail silently: name the first field that blocks saving (also ones without a visible message). */
+  function onInvalid(errors: Record<string, { message?: string } | undefined>) {
+    const [field, err] = Object.entries(errors).find(([, e]) => e?.message) ?? [];
+    toast.error(err?.message ? `${err.message}` : "Formada xato bor — maydonlarni tekshiring");
+    if (process.env.NODE_ENV !== "production") console.warn("[form] invalid", field, errors);
+  }
+
   async function onSubmit(values: Values) {
     const res = await saveBook(book?.id ?? null, values);
     if (!res.ok) {
@@ -106,7 +113,7 @@ export function BookForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_340px]" data-testid="book-form">
+      <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_340px]" data-testid="book-form">
         <div className="card-surface grid gap-5 p-6">
           <UploadField
             kind="book"

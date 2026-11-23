@@ -14,29 +14,23 @@ export const metadata: Metadata = { title: "Video darsliklar", description: "AU 
 
 export default async function LessonsPage() {
   const viewer = await getViewer();
-
-  if (!viewer?.hasPremium) {
-    return (
-      <>
-        <PageHeader eyebrow="Video darsliklar" title="Video darsliklar" description="Tizimli video darslar orqali tradingni bosqichma-bosqich o‘rganing." />
-        <div className="px-4 py-16 sm:px-6">
-          <ProAccessGate isGuest={!viewer} />
-        </div>
-      </>
-    );
-  }
-
-  const catalog = await getLessonCatalog(viewer.id, { isAdmin: viewer.isAdmin });
+  const premium = Boolean(viewer?.hasPremium);
+  const catalog = await getLessonCatalog(viewer?.id ?? null, { isAdmin: viewer?.isAdmin, hasPremium: premium });
   const totalSeconds = catalog.lessons.reduce((s, l) => s + (l.durationSeconds ?? 0), 0);
+  const freeCount = catalog.lessons.filter((l) => l.isFree).length;
 
   return (
     <>
       <PageHeader
         eyebrow="Video darsliklar"
         title="Video darsliklar"
-        description={catalog.lessons.some((l) => l.locked) ? "Darslar ketma-ket ochiladi: keyingi dars oldingisini yakunlaganingizdan so‘ng ochiladi." : "Kurslar bo‘yicha tartiblangan darslar. O‘rganish jarayoningiz avtomatik saqlanadi."}
+        description={
+          catalog.lessons.some((l) => l.lockReason === "sequence")
+            ? "Darslar ketma-ket ochiladi: keyingi dars oldingisini yakunlaganingizdan so‘ng ochiladi."
+            : "Kategoriya va raqam bo‘yicha tartiblangan darslar. O‘rganish jarayoningiz avtomatik saqlanadi."
+        }
         actions={
-          catalog.stats.total > 0 ? (
+          viewer && catalog.stats.total > 0 ? (
             <div className="card-surface w-full min-w-64 p-4 sm:w-auto" data-testid="learning-progress">
               <div className="flex items-baseline justify-between gap-6">
                 <span className="text-sm text-muted-foreground">Umumiy progress</span>
@@ -59,6 +53,15 @@ export default async function LessonsPage() {
           />
         ) : (
           <>
+            {!premium && (
+              <div className="mb-12 grid gap-4" data-testid="lessons-pro-banner">
+                <ProAccessGate isGuest={!viewer} />
+                <p className="text-center text-sm text-muted-foreground">
+                  {freeCount > 0 ? `${freeCount} ta dars bepul ochiq${viewer ? "" : " (ro‘yxatdan o‘tgach)"}. ` : ""}
+                  {catalog.stats.proLocked > 0 ? `${catalog.stats.proLocked} ta dars PRO obuna bilan ochiladi — quyida ro‘yxati.` : ""}
+                </p>
+              </div>
+            )}
             <ContinueWatching items={catalog.continueWatching} />
             <LessonsBrowser lessons={catalog.lessons} courses={catalog.courses} categories={catalog.categories} />
           </>

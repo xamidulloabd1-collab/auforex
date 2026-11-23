@@ -22,7 +22,10 @@ export type BrowserLesson = {
   categorySlug: string | null;
   progressPercent: number;
   completed: boolean;
-  /** Sequential mode: opens after the earlier lessons of the course are completed. */
+  number: number;
+  isFree: boolean;
+  /** "pro" = needs PRO, "sequence" = opens after the previous lesson is completed. */
+  lockReason: "pro" | "sequence" | null;
   locked: boolean;
 };
 
@@ -101,8 +104,9 @@ export function LessonsBrowser({
           {courses.map((course) => {
             const items = course.lessonIds.filter((id) => visibleIds.has(id)).map((id) => byId.get(id)!);
             if (items.length === 0) return null;
-            const done = course.lessonIds.filter((id) => byId.get(id)?.completed).length;
-            const pct = Math.round((done / course.lessonIds.length) * 100);
+            const reachable = course.lessonIds.filter((id) => byId.get(id)?.lockReason !== "pro");
+            const done = reachable.filter((id) => byId.get(id)?.completed).length;
+            const pct = reachable.length ? Math.round((done / reachable.length) * 100) : 0;
             return (
               <section key={course.id} aria-labelledby={`course-${course.id}`}>
                 <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
@@ -115,7 +119,7 @@ export function LessonsBrowser({
                   </div>
                   <div className="w-full shrink-0 sm:w-48">
                     <p className="mb-1.5 text-right font-mono text-xs text-muted-foreground">
-                      {done}/{course.lessonIds.length} · {pct}%
+                      {done}/{reachable.length} · {pct}%
                     </p>
                     <Progress value={pct} />
                   </div>
@@ -128,24 +132,31 @@ export function LessonsBrowser({
                         className={cn("group block", l.locked && "opacity-60")}
                         data-testid="lesson-card"
                         data-locked={l.locked ? "true" : undefined}
+                        data-lock-reason={l.lockReason ?? undefined}
                       >
                         <div className="relative">
                           <LessonThumb url={l.thumbnailUrl} title={l.title} />
                           {l.locked && (
                             <div className="absolute inset-0 grid place-items-center rounded-xl bg-black/55">
                               <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/80 px-3 py-1 text-xs">
-                                <LockIcon className="size-3.5" /> Yopiq
+                                <LockIcon className="size-3.5" /> {l.lockReason === "pro" ? "PRO" : "Yopiq"}
                               </span>
                             </div>
+                          )}
+                          {l.isFree && (
+                            <span className="absolute top-2 left-2 rounded-full bg-success/90 px-2 py-0.5 text-[11px] font-semibold text-background">Bepul</span>
                           )}
                         </div>
                         <div className="mt-4 flex items-start gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className="font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
-                              {course.lessonIds.indexOf(l.id) + 1}-dars
+                            <p className="font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase" data-testid="lesson-number">
+                              {l.categoryName && l.categoryName !== course.categoryName ? `${l.categoryName} — ` : ""}
+                              {l.number}-dars
                             </p>
                             <h3 className="mt-0.5 line-clamp-2 font-display font-semibold transition-colors group-hover:text-gold-soft">{l.title}</h3>
-                            {l.locked ? (
+                            {l.lockReason === "pro" ? (
+                              <p className="mt-1 text-sm text-muted-foreground">PRO obuna bilan ochiladi.</p>
+                            ) : l.lockReason === "sequence" ? (
                               <p className="mt-1 text-sm text-muted-foreground">Oldingi darsni yakunlagach ochiladi.</p>
                             ) : (
                               l.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{l.description}</p>

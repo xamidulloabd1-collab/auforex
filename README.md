@@ -145,14 +145,27 @@ Price, struck-through old price, currency, period label, purchase link, button t
 
 See [`.env.example`](.env.example) for the full annotated list.
 
+Every tool reads the `.env` files the way Next.js does — `npm run dev`, `npx prisma …`, `npm run db:seed` and
+`npm run doctor`: `.env.development.local` → `.env.local` → `.env.development` → `.env` (`next build`/`next start` use
+`.env.production.local` instead of `.env.development*`). The first file that defines a key wins, even with an empty
+value, so an empty `BETTER_AUTH_SECRET=""` in `.env.local` (typical after `vercel env pull`, which cannot read Sensitive
+variables) hides the real one in `.env`. `npm run doctor` and the check before `npm run dev` name the file each setting
+comes from and the database host the site will use — never the values. Details (Uzbek): [docs/VERCEL.md](docs/VERCEL.md#kompyuterda-lokal-ishga-tushirish-va-env-fayllari).
+
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `DATABASE_URL` | yes | PostgreSQL connection string (migrations; also the app unless `DATABASE_URL_POOLED` is set) |
+| `DATABASE_URL_POOLED` | recommended on Vercel | Pooled connection for the running app (Prisma Postgres: host `pooled.db.prisma.io`) |
+| `DIRECT_URL` | no | Direct connection for Prisma CLI when `DATABASE_URL` is pooled |
+| `DB_POOL_MAX` | no | Connections per instance (default 2 on Vercel, 10 elsewhere) |
 | `BETTER_AUTH_SECRET` | yes | ≥ 32 random characters |
 | `BETTER_AUTH_URL` | yes (prod) | Public URL; used for email links and origin checks |
 | `NEXT_PUBLIC_APP_URL` | yes | Same public URL; inlined at build time (metadata, sitemap) |
 | `TRUSTED_ORIGINS` | no | Extra comma-separated origins |
-| `STORAGE_DRIVER` / `STORAGE_LOCAL_ROOT` | no | `local` + `./storage` by default — **must be a persistent volume in production** |
+| `STORAGE_DRIVER` / `STORAGE_LOCAL_ROOT` | no | `local` (+ `./storage`, needs a persistent volume) or `s3`. Empty → `s3` when all `S3_*` are set |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION` | yes on Vercel | S3-compatible object storage (Cloudflare R2: region `auto`). Setup: [docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md) |
+| `BUNNY_STREAM_TOKEN_KEY` | no | Signs Bunny Stream embed links (6 h) |
+| `MIGRATE_ON_BUILD`, `SEED_ON_BUILD` | no | Vercel build: migrations run on production deploys only; seed never unless `SEED_ON_BUILD=true` |
 | `MAX_VIDEO_UPLOAD_MB` / `MAX_BOOK_UPLOAD_MB` / `MAX_IMAGE_UPLOAD_MB` | no | 2048 / 100 / 5 |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` | for email | Enables reset/verification emails. With SMTP configured, email verification becomes required unless `REQUIRE_EMAIL_VERIFICATION=false` |
 | `FOUNDER_USERNAME`, `FOUNDER_EMAIL`, `FOUNDER_PASSWORD`, `FOUNDER_NAME` | seed only | Founder super admin account (login `asadbek` by default) |
@@ -174,6 +187,8 @@ See [`.env.example`](.env.example) for the full annotated list.
 | `npm run db:fix` | Finds and fixes local database problems without deleting data: starts the Docker database, moves it to a free port if another PostgreSQL owns the configured one, aligns the container password with `.env`, creates a missing database, writes the working `DATABASE_URL`/`DB_PORT` |
 | `npm run founder:password [password]` | Set/reset the founder’s password in your database |
 | `npm run admin:create -- --email … [--password …] [--name …] [--username …]` | Create or promote a super admin (PowerShell: `npx tsx scripts/create-admin.ts --email …`) |
+| `npm run build:vercel` | Vercel build: settings check → production-only `prisma migrate deploy` → `next build` |
+| `npm run videos:import -- "<folder>" [--yes]` | Bulk-upload a folder of videos to Bunny Stream and create courses/lessons ([docs/VIDEO-DARSLAR.md](docs/VIDEO-DARSLAR.md)) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:e2e` | End-to-end tests (Playwright) against a running server |
 
@@ -192,6 +207,8 @@ E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD='…' E2E_FOUNDER_PASSWORD=
 npm run test:e2e
 ```
 
+Object-storage mode (behaves like Vercel): start the server with `VERCEL=1` and the `S3_*` variables pointing at a test bucket (any S3 emulator, e.g. `moto_server`, with the CORS policy from `docs/FAYL-SAQLASH.md`), and add `E2E_S3=1` to the test command. Uploads then go browser → bucket and videos are checked through the presigned redirect.
+
 Windows PowerShell: set the variables with `$env:E2E_BASE_URL="http://localhost:3000"` (one line per variable), then `npm run test:e2e`.
 
 The E2E suite signs up two users per run; the sign-up rate limit is 10 per 10 minutes per IP, so on a shared database clear it between repeated runs with `DELETE FROM "RateLimit";`.
@@ -202,9 +219,9 @@ Results of the verification run for this delivery: [`docs/TEST_RESULTS.md`](docs
 
 ## Production deployment
 
-The platform stores private uploads (videos, PDFs, challenge images) on disk through the storage driver, so it needs a **host with a persistent volume**.
+Private uploads (videos, PDFs, challenge images) go through the storage driver: either **S3-compatible object storage** (required on Vercel) or the **local disk** of a host with a persistent volume (Railway, Docker).
 
-### Railway (recommended — you already use it)
+### Railway
 
 Step-by-step in Uzbek: [docs/SERVERGA-JOYLASH.md](docs/SERVERGA-JOYLASH.md). In short (Git Bash, in the project folder):
 
@@ -224,7 +241,7 @@ How the image behaves:
 * **Start** (`node scripts/start-prod.mjs`): validates the settings with readable errors → `prisma migrate deploy` (retries while the database starts) → idempotent seed (categories, settings, founder account, the 3 books into the volume; existing data untouched) → `next start` on `$PORT`. `MIGRATE_ON_START=false` / `SEED_ON_START=false` skip steps. Without a volume it warns that uploads will be lost.
 * **Health check:** `/api/health` (200 when the database answers, 503 otherwise) — set it as the service’s healthcheck path.
 * No `VOLUME` instruction in the Dockerfile: Railway rejects it; attach a Railway Volume at `/app/storage`.
-* Large videos: Railway limits a request to 15 minutes and very large single uploads have been reported to fail; prefer YouTube (unlisted) / Bunny Stream links for long lessons.
+* Large videos: Railway limits a request to 15 minutes and very large single uploads have been reported to fail; set the `S3_*` variables to upload straight to object storage instead, or use Bunny Stream links.
 
 ### VPS / any Docker host
 ```bash
@@ -233,8 +250,12 @@ docker compose up -d --build   # migrations and seed run automatically on start
 ```
 Put Nginx/Caddy in front for TLS. Keep `client_max_body_size` ≥ `MAX_VIDEO_UPLOAD_MB` and raise proxy timeouts for large uploads.
 
-### Vercel / serverless
-Not supported as-is: serverless functions have no persistent disk. Implement the `StorageDriver` interface in `lib/storage/index.ts` for S3/R2/Bunny Storage first (see below), then deploy normally.
+### Vercel (current production: auforex.vercel.app)
+Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md) and [docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md).
+* `vercel.json` runs `npm run build:vercel` (`scripts/vercel-build.mjs`): checks required settings → **production only** `prisma migrate deploy` (never resets) → `next build`. Seed only with `SEED_ON_BUILD=true`.
+* Files live in S3-compatible object storage (Cloudflare R2). The browser uploads straight to the bucket with presigned URLs (single PUT or 10 MiB multipart parts, retries, cancel); the server verifies size and file signature on completion. Videos play through a 3-hour presigned URL issued only after the access check; books and images are served through the app (range requests ≤ 4 MiB per response). The bucket stays private. The bucket’s CORS must allow the site origin and expose `ETag`.
+* Database: a `pg` pool of 2 per function instance, `attachDatabasePool` from `@vercel/functions`; set `DATABASE_URL_POOLED` to the Prisma Postgres pooled host.
+* The three seed books are shipped inside the deployment (`prisma/seed-assets`, `bundled/…` keys), so they work without any storage.
 
 ### Checklist
 - [ ] Strong `BETTER_AUTH_SECRET`; HTTPS URL in `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL`
@@ -315,9 +336,9 @@ tests/              unit (Vitest), e2e (Playwright), fixtures
 |---|---|
 | Online payments (Click, Payme…) | Not integrated: payment happens in Telegram and the founder confirms it in the panel. Interface ready for a provider later |
 | SMTP | Code complete and tested against a local SMTP server. Needs real SMTP credentials (e.g. Gmail app password, Mailgun, Resend SMTP) |
-| Cloud object storage (S3/R2/Bunny) | Only the `local` driver is implemented; required for Vercel/serverless or multi-server setups |
+| Cloud object storage | S3-compatible driver implemented (tested against an S3 emulator). Needs a real Cloudflare R2 bucket + `S3_*` variables on Vercel |
 | Founder data | Profile text and Instagram are filled; **portrait** and optional "Ta’lim falsafasi" still need to be added in Super admin → Founder. The founder's real email should replace the placeholder `founder@auforex.local` |
-| Video lessons | None uploaded (by design). The "50 ga yaqin" lessons must be uploaded in the Super admin panel |
+| Video lessons | None uploaded (by design). Upload them in Super admin → Darslar (category, lesson number, Free/PRO) or with `npm run videos:import` (Bunny) |
 | Book distribution rights | Confirm rights for the three supplied PDFs (they are published by the seed) |
 | Orphaned uploads | Files uploaded in a panel form that is then abandoned stay in storage; add a periodic cleanup job if storage space matters |
 | Multi-instance rate limiting | App-level limits (uploads/progress/submissions) are in-memory per instance; auth limits are already DB-backed |

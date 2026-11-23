@@ -11,7 +11,8 @@ export function classifyDbError(err) {
   if (code === "3D000" || /database ".*" does not exist/i.test(message)) return { kind: "nodb", message };
   if (code === "ECONNREFUSED" || /ECONNREFUSED/.test(message)) return { kind: "refused", message };
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") return { kind: "dns", message };
-  if (code === "ETIMEDOUT" || /timeout/i.test(message)) return { kind: "timeout", message };
+  if (["ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"].includes(code) || /timeout|Connection terminated unexpectedly/i.test(message)) return { kind: "timeout", message };
+  if (/SSL|TLS|certificate/i.test(message)) return { kind: "tls", message };
   return { kind: "other", message };
 }
 
@@ -83,13 +84,19 @@ export function explainDbFailure(kind, { host, port, user } = {}) {
     case "auth":
       return `${host}:${port} dagi PostgreSQL “${user}” uchun parolni qabul qilmadi. Bu port’da boshqa PostgreSQL (masalan, Windows’ga o‘rnatilgani) ishlayotgan bo‘lishi yoki Docker bazasining paroli boshqacha bo‘lishi mumkin.`;
     case "refused":
-      return `${host}:${port} da PostgreSQL ishlamayapti (Docker Desktop yopiq yoki baza konteyneri to‘xtagan).`;
+      return isLocalHost(host)
+        ? `${host}:${port} da PostgreSQL ishlamayapti (Docker Desktop yopiq yoki baza konteyneri to‘xtagan).`
+        : `${host}:${port} ulanishni rad etdi: manzil yoki port noto‘g‘ri, yoki u serverda PostgreSQL ishlamayapti.`;
     case "nodb":
       return "PostgreSQL ishlayapti, lekin DATABASE_URL’dagi baza hali yaratilmagan.";
     case "dns":
       return "DATABASE_URL’dagi server manzili topilmadi.";
     case "timeout":
-      return `${host}:${port} javob bermadi (vaqt tugadi).`;
+      return isLocalHost(host)
+        ? `${host}:${port} javob bermadi (vaqt tugadi): PostgreSQL ishga tushayotgan yoki osilib qolgan bo‘lishi mumkin.`
+        : `${host}:${port} javob bermadi (vaqt tugadi). Bu kompyuterdan shu serverga ulanish yo‘q: internet/provayder yoki firewall ${port}-portni yopgan, VPN kerak, yoki manzil noto‘g‘ri. Tekshirish (PowerShell): Test-NetConnection ${host} -Port ${port}`;
+    case "tls":
+      return `${host}:${port} bilan xavfsiz (SSL) ulanish o‘rnatilmadi. URL oxiridagi sslmode sozlamasini tekshiring.`;
     default:
       return "Bazaga ulanishda kutilmagan xato.";
   }
