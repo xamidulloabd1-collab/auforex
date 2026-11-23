@@ -6,6 +6,7 @@ import { assertAdmin } from "@/lib/auth/session";
 import { audit } from "@/lib/audit";
 import { prisma } from "@/lib/db/prisma";
 import { normalizeEmbedUrl } from "@/lib/embed";
+import { checkBookFiles, type BookFileReport } from "@/lib/books/file-check";
 import { deleteStoredFile } from "@/lib/storage";
 import { slugify } from "@/lib/utils";
 import { bookSchema, categorySchema, courseSchema, lessonSchema } from "@/lib/validations/admin";
@@ -26,6 +27,8 @@ export async function saveCategory(id: string | null, input: z.input<typeof cate
     const data = categorySchema.parse(input);
     const slug = slugify(data.name);
     if (!slug) throw new UserFacingError("Nom noto‘g‘ri");
+    const same = await prisma.category.findFirst({ where: { kind: data.kind, slug, ...(id ? { NOT: { id } } : {}) }, select: { id: true } });
+    if (same) throw new UserFacingError("Bunday nomli kategoriya allaqachon bor");
     const saved = id
       ? await prisma.category.update({ where: { id: idSchema.parse(id) }, data: { name: data.name, slug, order: data.order } })
       : await prisma.category.create({ data: { name: data.name, slug, kind: data.kind, order: data.order } });
@@ -40,10 +43,39 @@ export async function saveCategory(id: string | null, input: z.input<typeof cate
 export async function deleteCategory(id: string): Promise<ActionResult> {
   try {
     const admin = await assertAdmin();
-    const cat = await prisma.category.delete({ where: { id: idSchema.parse(id) } });
+    const used = await prisma.category.findUnique({
+      where: { id: idSchema.parse(id) },
+      select: { name: true, _count: { select: { courses: true, lessons: true, books: true } } },
+    });
+    if (!used) throw new UserFacingError("Kategoriya topilmadi");
+    const { courses, lessons, books } = used._count;
+    if (courses + lessons + books > 0) {
+      const parts = [lessons && `${lessons} ta dars`, courses && `${courses} ta kurs`, books && `${books} ta kitob`].filter(Boolean).join(", ");
+      throw new UserFacingError(`“${used.name}” ishlatilmoqda (${parts}). Avval ularni boshqa kategoriyaga o‘tkazing.`);
+    }
+    const cat = await prisma.category.delete({ where: { id } });
     await audit({ actorId: admin.id, action: "category.delete", targetType: "Category", targetId: id, summary: cat.name });
     revalidateLearning();
-    return { ok: true, message: "Kategoriya o‘chirildi (bog‘langan kontent kategoriyasiz qoldi)" };
+    return { ok: true, message: "Kategoriya o‘chirildi" };
+  } catch (err) {
+    return actionError(err);
+  }
+}
+
+export async function moveCategory(id: string, direction: "up" | "down"): Promise<ActionResult> {
+  try {
+    const admin = await assertAdmin();
+    const cat = await prisma.category.findUnique({ where: { id: idSchema.parse(id) }, select: { id: true, kind: true, name: true } });
+    if (!cat) throw new UserFacingError("Kategoriya topilmadi");
+    const siblings = await prisma.category.findMany({ where: { kind: cat.kind }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { id: true } });
+    const idx = siblings.findIndex((c) => c.id === id);
+    const swap = direction === "up" ? idx - 1 : idx + 1;
+    if (swap < 0 || swap >= siblings.length) return { ok: true };
+    [siblings[idx], siblings[swap]] = [siblings[swap]!, siblings[idx]!];
+    await prisma.$transaction(siblings.map((c, i) => prisma.category.update({ where: { id: c.id }, data: { order: i } })));
+    await audit({ actorId: admin.id, action: "category.reorder", targetType: "Category", targetId: id, summary: `${cat.name}: ${direction === "up" ? "yuqoriga" : "pastga"}` });
+    revalidateLearning();
+    return { ok: true };
   } catch (err) {
     return actionError(err);
   }
@@ -97,6 +129,15 @@ export async function saveLesson(id: string | null, input: z.input<typeof lesson
     const data = lessonSchema.parse(input);
     const course = await prisma.course.findUnique({ where: { id: data.courseId }, select: { id: true } });
     if (!course) throw new UserFacingError("Kurs topilmadi");
+    const category = await prisma.category.findFirst({ where: { id: data.categoryId, kind: "COURSE" }, select: { id: true } });
+    if (!category) throw new UserFacingError("Kategoriya topilmadi");
+    const clash = await prisma.lesson.findFirst({
+      where: { courseId: data.courseId, order: data.order, ...(id ? { NOT: { id } } : {}) },
+      select: { title: true },
+    });
+    if (clash) {
+      throw new UserFacingError(`Bu kursda ${data.order}-dars allaqachon bor («${clash.title}»). Boshqa raqam tanlang yoki ro‘yxatda o‘rnini almashtiring.`);
+    }
 
     let embedUrl: string | null = null;
     let videoInfo: { size: number } | null = null;
@@ -120,7 +161,10 @@ export async function saveLesson(id: string | null, input: z.input<typeof lesson
       slug,
       description: nullable(data.description),
       courseId: data.courseId,
+      categoryId: data.categoryId,
       order: data.order,
+      level: data.level,
+      isFree: data.isFree,
       durationSeconds: data.durationSeconds || null,
       videoSource: data.videoSource,
       videoKey,
@@ -171,7 +215,12 @@ export async function moveLesson(id: string, direction: "up" | "down"): Promise<
     if (swap < 0 || swap >= siblings.length) return { ok: true };
     const reordered = [...siblings];
     [reordered[idx], reordered[swap]] = [reordered[swap]!, reordered[idx]!];
-    await prisma.$transaction(reordered.map((s, i) => prisma.lesson.update({ where: { id: s.id }, data: { order: i + 1 } })));
+    // Numbers are unique per course: move everyone to a temporary negative number first, then
+    // write 1, 2, 3 … — all in one transaction, so a failure changes nothing. Progress follows ids.
+    await prisma.$transaction([
+      ...reordered.map((s, i) => prisma.lesson.update({ where: { id: s.id }, data: { order: -(i + 1) } })),
+      ...reordered.map((s, i) => prisma.lesson.update({ where: { id: s.id }, data: { order: i + 1 } })),
+    ]);
     revalidateLearning();
     return { ok: true };
   } catch (err) {
@@ -239,6 +288,29 @@ export async function setBookPublished(id: string, isPublished: boolean): Promis
     await audit({ actorId: admin.id, action: "book.publish", targetType: "Book", targetId: id, summary: `${book.title}: ${isPublished ? "nashr" : "yashirildi"}` });
     revalidateLearning();
     return { ok: true, message: isPublished ? "Nashr qilindi" : "Nashrdan olindi" };
+  } catch (err) {
+    return actionError(err);
+  }
+}
+
+/** Super admin → Kitoblar → "Fayllarni tekshirish": finds books whose PDF is missing (see lib/books/file-check.ts). */
+export async function checkBooksAction(): Promise<ActionResult<{ report: BookFileReport[] }>> {
+  try {
+    const admin = await assertAdmin();
+    const report = await checkBookFiles();
+    const relinked = report.filter((r) => r.file === "relinked" || r.cover === "relinked").length;
+    const missing = report.filter((r) => r.file === "missing").length;
+    if (relinked) {
+      await audit({ actorId: admin.id, action: "book.files.relink", targetType: "Book", targetId: "-", summary: `${relinked} ta kitob fayli qayta ulandi` });
+      revalidatePath("/books");
+      revalidatePath("/super-admin/books");
+    }
+    const message = missing
+      ? `${missing} ta kitobning fayli topilmadi — PDF’ni qayta yuklang`
+      : relinked
+        ? `${relinked} ta kitob fayli qayta ulandi`
+        : "Barcha kitob fayllari joyida";
+    return { ok: true, data: { report }, message };
   } catch (err) {
     return actionError(err);
   }

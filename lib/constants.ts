@@ -24,6 +24,7 @@ export const ADMIN_NAV = [
   { href: "/super-admin/users", label: "Foydalanuvchilar", icon: "users" },
   { href: "/super-admin/courses", label: "Kurslar", icon: "layers" },
   { href: "/super-admin/lessons", label: "Video darslar", icon: "play" },
+  { href: "/super-admin/categories", label: "Kategoriyalar", icon: "tags" },
   { href: "/super-admin/books", label: "Kitoblar", icon: "book" },
   { href: "/super-admin/challenges", label: "Challenge’lar", icon: "trophy" },
   { href: "/super-admin/team", label: "Super adminlar", icon: "crown" },
@@ -85,3 +86,6 @@ export const VIDEO_EMBED_HOSTS = [
   "iframe.mediadelivery.net",
   "player.mediadelivery.net",
 ] as const;
+
+/** Lesson difficulty labels (Lesson.level). */
+export const LEVEL_LABELS = { BEGINNER: "Boshlang‘ich", INTERMEDIATE: "O‘rta", ADVANCED: "Yuqori" } as const;

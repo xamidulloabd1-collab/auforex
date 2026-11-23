@@ -2,9 +2,10 @@ import type { Metadata, Viewport } from "next";
 import { Toaster } from "@/components/ui/sonner";
 import { MotionProvider } from "@/components/shared/motion-provider";
 import { fontDisplay, fontMono, fontSans } from "./fonts";
+import { publicSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
-const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+const siteUrl = publicSiteUrl();
 
 /**
  * Every page shows live data (settings, lessons, challenges) and the signed-in user, so pages are

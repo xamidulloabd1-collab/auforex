@@ -2,13 +2,17 @@
  * Helpers shared by `prisma/seed.ts` and `scripts/create-admin.ts`.
  * These run outside Next.js (via tsx), so they must not import `server-only` modules.
  */
-import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "better-auth/crypto";
 import { PrismaClient } from "../lib/db/generated/client";
+import { loadProjectEnv } from "../scripts/lib/env-load.mjs";
 
-export function createScriptPrisma() {
-  const connectionString = process.env.DATABASE_URL;
+// The same .env files, in the same order, as `npm run dev` — seed and admin scripts write to the
+// database the site actually uses.
+loadProjectEnv();
+
+export function createScriptPrisma(url?: string) {
+  const connectionString = url || process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set (see .env.example)");
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 }

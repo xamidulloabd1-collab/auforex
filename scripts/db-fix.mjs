@@ -184,6 +184,8 @@ async function main() {
 }
 
 async function nextSteps(url) {
+  const { dotEnvOverrideWarnings } = await import("./lib/env-load.mjs");
+  for (const w of dotEnvOverrideWarnings(root, ["DATABASE_URL", "DATABASE_URL_POOLED"])) console.log(`⚠  ${w}`);
   const pgmod = (await import("pg")).default;
   const client = new pgmod.Client({ connectionString: url, connectionTimeoutMillis: 4000 });
   let migrated = 0;

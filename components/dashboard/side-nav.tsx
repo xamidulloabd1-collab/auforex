@@ -11,6 +11,7 @@ import {
   LayoutDashboardIcon,
   PlayCircleIcon,
   SettingsIcon,
+  TagsIcon,
   ShieldIcon,
   TrophyIcon,
   UserIcon,
@@ -31,6 +32,7 @@ const ICONS: Record<string, LucideIcon> = {
   user: UserIcon,
   shield: ShieldIcon,
   inbox: InboxIcon,
+  tags: TagsIcon,
 };
 
 type Item = { href: string; label: string; icon: string; badge?: number };

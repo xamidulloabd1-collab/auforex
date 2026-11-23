@@ -127,6 +127,12 @@ async function seedFounderAccount() {
   let password = process.env.FOUNDER_PASSWORD;
   let generated = false;
   if (!exists && !password) {
+    if (process.env.VERCEL === "1" || process.env.SEED_NO_GENERATED_PASSWORDS === "true") {
+      // Hosted build logs are kept and visible to the team: never print a password there.
+      console.log(`! founder "${username}" yaratilmadi: FOUNDER_PASSWORD o‘rnatilmagan.`);
+      console.log("  Vercel → Settings → Environment Variables ga FOUNDER_PASSWORD qo‘shing va qayta deploy qiling.");
+      return;
+    }
     password = generatePassword();
     generated = true;
   }
@@ -137,19 +143,45 @@ async function seedFounderAccount() {
   }
 }
 
+/**
+ * On Vercel (no writable disk at runtime) the seeded books are not copied anywhere: their
+ * records point at the read-only copies shipped with the deployment (`bundled/…`).
+ */
+// Always: the copies in prisma/seed-assets ship with every deployment (local, Docker, Vercel), so
+// seeded books never depend on a `storage/` folder of the machine that ran the seed.
+const BUNDLED = process.env.SEED_COPY_FILES !== "true";
+
 async function seedBooks() {
+  if (BUNDLED) console.log("  (fayllar ilova ichidan o‘qiladi: bundled/)");
   for (const book of BOOKS) {
+    const pdfPath = path.join(ASSETS, "books", book.file);
     const existing = await prisma.book.findUnique({ where: { slug: book.slug } });
     if (existing) {
-      console.log(`  • ${book.title}: already present, skipped`);
+      // A database seeded elsewhere points at files this host cannot see: re-point the
+      // original seeded file (same size) to the bundled copy. Admin replacements are left alone.
+      if (BUNDLED && !existing.fileKey.startsWith("bundled/") && existing.fileSize === (await stat(pdfPath)).size) {
+        await prisma.book.update({
+          where: { id: existing.id },
+          data: {
+            fileKey: `bundled/books/${book.file}`,
+            ...(book.cover && existing.coverKey && !existing.coverKey.startsWith("bundled/") ? { coverKey: `bundled/covers/${book.cover}` } : {}),
+          },
+        });
+        console.log(`  • ${book.title}: bundled nusxaga ulandi`);
+      } else {
+        console.log(`  • ${book.title}: already present, skipped`);
+      }
       continue;
     }
-    const pdfPath = path.join(ASSETS, "books", book.file);
     const head = (await readFile(pdfPath)).subarray(0, 5).toString("latin1");
     if (head !== "%PDF-") throw new Error(`${book.file} is not a PDF`);
     const { size } = await stat(pdfPath);
-    const fileKey = await copyIntoStorage(pdfPath, "books", "pdf");
-    const coverKey = book.cover ? await copyIntoStorage(path.join(ASSETS, "covers", book.cover), "covers", "webp") : null;
+    const fileKey = BUNDLED ? `bundled/books/${book.file}` : await copyIntoStorage(pdfPath, "books", "pdf");
+    const coverKey = !book.cover
+      ? null
+      : BUNDLED
+        ? `bundled/covers/${book.cover}`
+        : await copyIntoStorage(path.join(ASSETS, "covers", book.cover), "covers", "webp");
     const category = await prisma.category.findUnique({
       where: { kind_slug: { kind: "BOOK", slug: slugify(book.category) } },
     });

@@ -5,11 +5,12 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { username } from "better-auth/plugins";
 import { appUrl, env, isMailConfigured } from "@/lib/env";
+import { vercelOrigins } from "@/lib/env-schema";
 import { prisma } from "@/lib/db/prisma";
 import { sendMail } from "@/lib/mail";
 import { passwordResetEmail, verificationEmail } from "@/lib/mail/templates";
 import { nameSchema, passwordSchema } from "@/lib/validations/auth";
-import { devLanOrigin } from "./origins";
+import { devLanOrigin, requestOwnOrigin } from "./origins";
 
 function firstIssue(result: { success: boolean; error?: { issues: { message: string }[] } }) {
   return result.error?.issues[0]?.message ?? "Ma’lumotlar noto‘g‘ri";
@@ -29,7 +30,15 @@ function createAuth() {
     appName: "AU Forex Academy",
     baseURL,
     secret: e.BETTER_AUTH_SECRET,
-    trustedOrigins: (request) => [baseURL, ...extraOrigins, devLanOrigin(request?.headers.get("origin"), process.env.NODE_ENV)],
+    // Configured address + extra origins + this project's Vercel domains + the address the
+    // request itself was sent to (same-origin only). Cross-site requests remain rejected.
+    trustedOrigins: (request) => [
+      baseURL,
+      ...extraOrigins,
+      ...vercelOrigins(process.env),
+      requestOwnOrigin(request),
+      devLanOrigin(request?.headers.get("origin"), process.env.NODE_ENV),
+    ],
     database: prismaAdapter(prisma, { provider: "postgresql" }),
 
     user: {

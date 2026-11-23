@@ -280,6 +280,8 @@ export function FounderForm({ defaults, portraitUrl }: { defaults: SettingsValue
             kind="founder"
             accept="image/png,image/jpeg,image/webp"
             label="Portret"
+            hint="PNG/JPG/WEBP, 4:5 nisbat tavsiya etiladi"
+            testId="founder-upload"
             currentLabel={portraitKey ? "Portret yuklangan" : null}
             onUploaded={(f, original) => {
               form.setValue("portraitKey", f.key);

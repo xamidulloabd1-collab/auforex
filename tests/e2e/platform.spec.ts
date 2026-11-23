@@ -141,6 +141,7 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     await page.goto("/super-admin/lessons/new");
     await page.getByTestId("lesson-title").fill(LESSON_TITLE);
     await page.getByTestId("lesson-course").selectOption({ label: COURSE_TITLE });
+    await page.getByTestId("lesson-category").selectOption({ label: "Texnik tahlil" });
     await page.getByTestId("video-upload").setInputFiles(SAMPLE_VIDEO);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("lesson-publish").click();
@@ -185,7 +186,12 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     }
     expect(digits(await gate.getByTestId("old-price").textContent())).toBe("1200000");
     expect(digits(await gate.getByTestId("current-price").textContent())).toBe("199000");
-    await expect(page.getByText(LESSON_TITLE)).toHaveCount(0);
+    // PRO lessons are listed for FREE users, but locked — and no video link reaches the page.
+    const lockedCard = page.getByTestId("lesson-card").filter({ hasText: LESSON_TITLE });
+    await expect(lockedCard).toHaveAttribute("data-lock-reason", "pro");
+    await lockedCard.click();
+    await expect(page.getByTestId("lesson-pro-locked")).toBeVisible();
+    await expect(page.locator("video, iframe")).toHaveCount(0);
 
     await page.goto("/books");
     await expect(page.getByTestId("pro-access-gate")).toBeVisible();
@@ -236,10 +242,14 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     lessonVideoUrl = (await video.getAttribute("src"))!;
     expect(lessonVideoUrl).toMatch(/^\/api\/lessons\/[a-z0-9]+\/video$/);
 
-    const partial = await page.request.get(lessonVideoUrl, { headers: { Range: "bytes=0-1023" } });
+    // Local disk: the app streams the range itself. Object storage (E2E_S3=1, like Vercel): the app
+    // answers with a no-store redirect to a short-lived bucket link, and the bucket serves the range.
+    const first = await page.request.get(lessonVideoUrl, { headers: { Range: "bytes=0-1023" }, maxRedirects: 0 });
+    expect(first.headers()["cache-control"]).toContain("no-store");
+    const partial = process.env.E2E_S3 === "1" ? await page.request.get(first.headers().location!, { headers: { Range: "bytes=0-1023" } }) : first;
+    if (process.env.E2E_S3 === "1") expect(first.status()).toBe(302);
     expect(partial.status()).toBe(206);
     expect(partial.headers()["content-range"]).toMatch(/^bytes 0-1023\/\d+$/);
-    expect(partial.headers()["cache-control"]).toContain("no-store");
 
     await expect(page.getByTestId("lesson-status")).toHaveText("Dars hali yakunlanmagan");
     await page.getByTestId("mark-complete").click();

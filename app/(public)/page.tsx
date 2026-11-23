@@ -1,6 +1,7 @@
 import { getViewer } from "@/lib/auth/session";
 import { getSetting } from "@/lib/settings";
 import { getBookPreviews, getLessonPreviews, getPublicCounts } from "@/lib/data/learning";
+import { withFallback } from "@/lib/data/safe";
 import { publicMediaUrl } from "@/lib/storage/keys";
 import { Hero } from "@/components/home/hero";
 import { Welcome } from "@/components/home/welcome";
@@ -10,17 +11,21 @@ import { BooksPreview, LessonsPreview } from "@/components/home/previews";
 import { ChallengeIntro, FounderPreview, ProBenefits, TradingViewIntro } from "@/components/home/feature-sections";
 import { Faq, FinalCta } from "@/components/home/faq-final";
 
+const EMPTY_COUNTS = { lessons: 0, books: 0, challenges: 0, totalDurationSeconds: 0 };
+
 export default async function HomePage() {
+  // The landing page must open for every visitor: if a database read fails, that section shows
+  // its empty state and the server log explains the cause (settings already fall back to defaults).
   const [viewer, academy, home, faq, subscription, founder, counts, lessons, books] = await Promise.all([
-    getViewer(),
+    withFallback("viewer", getViewer, null),
     getSetting("academy"),
     getSetting("home"),
     getSetting("faq"),
     getSetting("subscription"),
     getSetting("founder"),
-    getPublicCounts(),
-    getLessonPreviews(6),
-    getBookPreviews(3),
+    withFallback("public counts", getPublicCounts, EMPTY_COUNTS),
+    withFallback("lesson previews", () => getLessonPreviews(6), []),
+    withFallback("book previews", () => getBookPreviews(3), []),
   ]);
 
   const primaryHref = viewer ? "/lessons" : "/register";

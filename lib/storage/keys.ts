@@ -24,13 +24,24 @@ export const PUBLIC_AREAS: ReadonlySet<StorageArea> = new Set([
 
 const KEY_PATTERN = /^(videos|books|submissions|covers|thumbnails|avatars|founder)\/[a-f0-9]{32}\.(mp4|webm|pdf|png|jpg|webp)$/;
 
+/**
+ * Read-only files shipped with the app (the seeded books and covers in `prisma/seed-assets`).
+ * Used on hosts whose disk is read-only (Vercel): `bundled/books/<name>.pdf`.
+ */
+const BUNDLED_PATTERN = /^bundled\/(books|covers)\/[a-z0-9][a-z0-9-]{0,99}\.(pdf|png|jpg|webp)$/;
+
+export function isBundledKey(key: string): boolean {
+  return BUNDLED_PATTERN.test(key);
+}
+
 export function isValidStorageKey(key: string): boolean {
-  return KEY_PATTERN.test(key);
+  return KEY_PATTERN.test(key) || BUNDLED_PATTERN.test(key);
 }
 
 export function areaOf(key: string): StorageArea | null {
-  if (!isValidStorageKey(key)) return null;
-  return key.split("/")[0] as StorageArea;
+  if (KEY_PATTERN.test(key)) return key.split("/")[0] as StorageArea;
+  if (BUNDLED_PATTERN.test(key)) return key.split("/")[1] as StorageArea;
+  return null;
 }
 
 export function isPublicKey(key: string) {
