@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { AuthorizationError } from "@/lib/auth/session";
 import { UploadError } from "@/lib/storage";
+import { S3Error } from "@/lib/storage/s3";
 import { RateLimitError } from "@/lib/rate-limit";
 
 export function jsonError(status: number, message: string, extra?: Record<string, unknown>) {
@@ -21,6 +22,21 @@ export function handleRouteError(err: unknown) {
   }
   if (err instanceof ZodError) {
     return jsonError(400, err.issues[0]?.message ?? "Ma’lumotlar noto‘g‘ri");
+  }
+  // The browser closed the connection mid-request (upload cancelled, tab closed): not a server fault.
+  if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ECONNRESET" && err.message === "aborted") {
+    console.warn("[api] request aborted by the client");
+    return jsonError(400, "So‘rov to‘xtatildi.");
+  }
+  if (err instanceof S3Error) {
+    console.error("[storage] S3 error", err.status, err.code, err.message);
+    const hint =
+      err.status === 403 || err.code === "SignatureDoesNotMatch" || err.code === "InvalidAccessKeyId"
+        ? "S3 kalitlari noto‘g‘ri yoki ruxsat yetarli emas"
+        : err.code === "NoSuchBucket"
+          ? "S3_BUCKET nomi noto‘g‘ri"
+          : `S3: ${err.code}`;
+    return jsonError(502, `Fayl omboriga ulanishda xato (${hint}).`);
   }
   console.error("[api] unexpected error", err);
   return jsonError(500, "Kutilmagan xatolik yuz berdi. Keyinroq qayta urinib ko‘ring.");

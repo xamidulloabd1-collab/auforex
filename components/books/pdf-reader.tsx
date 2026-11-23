@@ -57,7 +57,36 @@ export function PdfReader({ bookId, title, initialPage, watermark }: Props) {
       try {
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
-        const task = pdfjs.getDocument({ url: `/api/books/${bookId}/file`, rangeChunkSize: 262144 });
+        // Explicit byte-range loading: every request stays ≤ 1 MiB, which also fits serverless
+        // hosts that cap a single response (Vercel 4.5 MB) — the whole PDF is never sent at once.
+        const url = `/api/books/${bookId}/file`;
+        const CHUNK = 1 << 20;
+        const fetchRange = async (begin: number, endExclusive: number) => {
+          const res = await fetch(url, { headers: { Range: `bytes=${begin}-${endExclusive - 1}` }, credentials: "same-origin" });
+          if (res.status !== 206 && res.status !== 200) throw new Error(String(res.status));
+          const buf = new Uint8Array(await res.arrayBuffer());
+          const total = Number(res.headers.get("content-range")?.split("/")[1] ?? buf.length);
+          return { data: res.status === 200 ? buf.subarray(begin, endExclusive) : buf, total };
+        };
+        const first = await fetchRange(0, CHUNK);
+        const fail = (err: unknown) => {
+          if (cancelled) return;
+          console.error(err);
+          setErrorText("Kitobni yuklab bo‘lmadi. Sahifani yangilab ko‘ring.");
+          setStatus("error");
+        };
+        class RangeTransport extends pdfjs.PDFDataRangeTransport {
+          override requestDataRange(begin: number, end: number) {
+            void (async () => {
+              for (let pos = begin; pos < end; pos += CHUNK) {
+                const { data } = await fetchRange(pos, Math.min(end, pos + CHUNK));
+                this.onDataRange(pos, data);
+              }
+            })().catch(fail);
+          }
+        }
+        const transport = new RangeTransport(first.total, first.data);
+        const task = pdfjs.getDocument({ range: transport, rangeChunkSize: CHUNK, disableAutoFetch: true, disableStream: true });
         loaded = await task.promise;
         if (cancelled) {
           void loaded.loadingTask.destroy();
@@ -70,7 +99,13 @@ export function PdfReader({ bookId, title, initialPage, watermark }: Props) {
       } catch (err) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "";
-        setErrorText(/403|401/.test(msg) ? "Bu kitobni o‘qish uchun ruxsat yo‘q." : "Kitobni yuklab bo‘lmadi. Sahifani yangilab ko‘ring.");
+        setErrorText(
+          /403|401/.test(msg)
+            ? "Bu kitobni o‘qish uchun ruxsat yo‘q."
+            : msg === "404"
+              ? "Kitob fayli serverda topilmadi. Administrator faylni qayta yuklashi kerak."
+              : "Kitobni yuklab bo‘lmadi. Sahifani yangilab ko‘ring.",
+        );
         setStatus("error");
       }
     })();
@@ -214,7 +249,7 @@ export function PdfReader({ bookId, title, initialPage, watermark }: Props) {
               <ArrowLeftIcon />
             </Link>
           </Button>
-          <p className="min-w-0 flex-1 truncate font-display text-sm font-semibold">{title}</p>
+          <h1 className="min-w-0 flex-1 truncate font-display text-sm font-semibold">{title}</h1>
 
           <div className="hidden items-center gap-1 sm:flex">
             <Button variant="secondary" size="icon-sm" onClick={() => go(-1)} disabled={page <= 1} aria-label="Oldingi bet">

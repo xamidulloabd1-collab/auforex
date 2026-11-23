@@ -18,6 +18,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   PASSWORD_TOO_LONG: "Parol juda uzun",
   INVALID_PASSWORD: "Joriy parol noto‘g‘ri",
   ACCOUNT_SUSPENDED: "Hisobingiz vaqtincha bloklangan. Administrator bilan bog‘laning.",
+  INVALID_ORIGIN: "Xavfsizlik tekshiruvi o‘tmadi. Sahifani yangilab, qayta urinib ko‘ring.",
+  MISSING_OR_NULL_ORIGIN: "Xavfsizlik tekshiruvi o‘tmadi. Sahifani yangilab, qayta urinib ko‘ring.",
+  SERVER_MISCONFIGURED: "Sayt sozlamalarida xatolik bor. Administrator xabardor qilindi.",
+  SERVER_ERROR: "Serverda vaqtinchalik xatolik. Birozdan so‘ng qayta urinib ko‘ring.",
+  DATABASE_UNAVAILABLE: "Ma’lumotlar bazasiga ulanib bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+  USERNAME_IS_ALREADY_TAKEN: "Bu login band",
+  USERNAME_IS_ALREADY_TAKEN_PLEASE_TRY_ANOTHER: "Bu login band",
+  INVALID_EMAIL: "Email manzil noto‘g‘ri",
+  FAILED_TO_CREATE_USER: "Hisob yaratilmadi. Qayta urinib ko‘ring.",
 };
 
 /** Maps Better Auth error payloads to Uzbek UI messages. */
@@ -27,5 +36,7 @@ export function authErrorMessage(error: { code?: string; message?: string; statu
   if (error.code && ERROR_MESSAGES[error.code]) return ERROR_MESSAGES[error.code]!;
   // Server-side validation messages are already in Uzbek.
   if (error.message && /[‘’]|kiriting|parol|ism|hisob/i.test(error.message)) return error.message;
+  if (!error.status) return "Server bilan aloqa yo‘q. Internetni tekshirib, qayta urinib ko‘ring.";
+  if (error.status >= 500) return "Serverda vaqtinchalik xatolik. Birozdan so‘ng qayta urinib ko‘ring.";
   return "Amalni bajarib bo‘lmadi. Qayta urinib ko‘ring.";
 }

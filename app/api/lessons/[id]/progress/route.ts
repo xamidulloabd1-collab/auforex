@@ -17,7 +17,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/lessons/[id
   try {
     assertSameOrigin(request);
     const viewer = await assertUser();
-    if (!viewer.hasPremium) return jsonError(403, "PRO obuna talab qilinadi");
     rateLimit(`lesson-progress:${viewer.id}`, 90, 60_000);
 
     const { id } = await ctx.params;
@@ -25,11 +24,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/lessons/[id
 
     const lesson = await prisma.lesson.findUnique({
       where: { id },
-      select: { id: true, isPublished: true, durationSeconds: true, course: { select: { isPublished: true } } },
+      select: { id: true, isPublished: true, isFree: true, durationSeconds: true, course: { select: { isPublished: true } } },
     });
     if (!lesson || (!(lesson.isPublished && lesson.course.isPublished) && !viewer.isAdmin)) {
       return jsonError(404, "Dars topilmadi");
     }
+    if (!lesson.isFree && !viewer.hasPremium) return jsonError(403, "PRO obuna talab qilinadi");
     const blocker = await getLessonBlocker(lesson.id, viewer);
     if (blocker) return jsonError(403, `Avval «${blocker.title}» darsini yakunlang`);
 

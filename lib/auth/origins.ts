@@ -18,3 +18,27 @@ export function devLanOrigin(origin: string | null | undefined, nodeEnv: string 
     return null;
   }
 }
+
+/**
+ * The site's own origin for this request (scheme + host the browser used), so sign-in works on
+ * every address the site is served from (vercel.app, a custom domain, preview URLs) without
+ * listing them. Only a request whose Origin header equals that address matches it — a page on
+ * another site sends its own origin and is still rejected (CSRF protection stays intact).
+ */
+export function requestOwnOrigin(request: Request | undefined | null): string | null {
+  if (!request) return null;
+  const headers = request.headers;
+  const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "").split(",")[0]!.trim();
+  if (!host || !/^[a-z0-9.-]+(:\d{1,5})?$/i.test(host)) return null;
+  let proto = (headers.get("x-forwarded-proto") ?? "").split(",")[0]!.trim().toLowerCase();
+  if (proto !== "http" && proto !== "https") {
+    try {
+      proto = new URL(request.url).protocol.replace(":", "");
+    } catch {
+      return null;
+    }
+  }
+  const own = `${proto}://${host.toLowerCase()}`;
+  const origin = headers.get("origin");
+  return origin && origin.toLowerCase() === own ? own : null;
+}

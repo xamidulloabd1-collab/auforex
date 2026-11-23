@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { z } from "zod";
 import { saveLesson } from "@/lib/actions/admin/content";
 import { lessonSchema } from "@/lib/validations/admin";
+import { LEVEL_LABELS } from "@/lib/constants";
 import { formatDuration } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -42,26 +43,35 @@ function readVideoDuration(file: File) {
 export function LessonForm({
   lesson,
   courses,
+  categories,
+  nextNumbers,
   defaultCourseId,
   maxVideoBytes,
   uploadsAvailable = true,
 }: {
   lesson?: Values & { id: string };
-  courses: { id: string; title: string }[];
+  courses: { id: string; title: string; categoryId: string | null }[];
+  categories: { id: string; name: string }[];
+  /** First free lesson number per course (new lessons start there). */
+  nextNumbers: Record<string, number>;
   defaultCourseId?: string;
   maxVideoBytes: number;
-  /** False on hosts with a read-only disk (Vercel): videos come from Bunny Stream instead. */
+  /** False when files cannot be stored (Vercel without S3/R2): videos then come from a Bunny/YouTube link. */
   uploadsAvailable?: boolean;
 }) {
   const router = useRouter();
+  const startCourse = courses.find((c) => c.id === defaultCourseId) ?? courses[0];
   const form = useForm<Values>({
     resolver: zodResolver(lessonSchema),
     defaultValues: lesson ?? {
       title: "",
       slug: "",
       description: "",
-      courseId: defaultCourseId ?? courses[0]?.id ?? "",
-      order: 0,
+      courseId: startCourse?.id ?? "",
+      categoryId: startCourse?.categoryId ?? "",
+      order: startCourse ? (nextNumbers[startCourse.id] ?? 1) : 1,
+      level: null,
+      isFree: false,
       durationSeconds: null,
       videoSource: uploadsAvailable ? "UPLOAD" : "EMBED",
       videoKey: null,
@@ -71,9 +81,20 @@ export function LessonForm({
     },
   });
   const source = form.watch("videoSource");
+  const categoryId = form.watch("categoryId");
+  const number = form.watch("order");
+  const title = form.watch("title");
+  const categoryName = categories.find((c) => c.id === categoryId)?.name;
   const videoKey = form.watch("videoKey");
   const thumbnailKey = form.watch("thumbnailKey");
   const duration = form.watch("durationSeconds");
+
+  /** Never fail silently: name the first field that blocks saving (also ones without a visible message). */
+  function onInvalid(errors: Record<string, { message?: string } | undefined>) {
+    const [field, err] = Object.entries(errors).find(([, e]) => e?.message) ?? [];
+    toast.error(err?.message ? `${err.message}` : "Formada xato bor — maydonlarni tekshiring");
+    if (process.env.NODE_ENV !== "production") console.warn("[form] invalid", field, errors);
+  }
 
   async function onSubmit(values: Values) {
     const res = await saveLesson(lesson?.id ?? null, values);
@@ -88,25 +109,64 @@ export function LessonForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]" data-testid="lesson-form">
+      <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]" data-testid="lesson-form">
         <div className="card-surface grid gap-5 p-6">
           <FormField control={form.control} name="title" render={({ field }) => (
-            <FormItem><FormLabel>Sarlavha</FormLabel><FormControl><Input {...field} data-testid="lesson-title" /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>Video dars nomi</FormLabel><FormControl><Input {...field} data-testid="lesson-title" /></FormControl><FormMessage /></FormItem>
           )} />
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <FormField control={form.control} name="categoryId" render={({ field }) => (
+              <FormItem><FormLabel>Kategoriya</FormLabel><FormControl>
+                <NativeSelect {...field} data-testid="lesson-category">
+                  <option value="">Tanlang…</option>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </NativeSelect>
+              </FormControl>
+              {categories.length === 0 && <FormDescription>Avval Super admin → Kategoriyalar bo‘limida kategoriya yarating.</FormDescription>}
+              <FormMessage /></FormItem>
+            )} />
             <FormField control={form.control} name="courseId" render={({ field }) => (
               <FormItem><FormLabel>Kurs</FormLabel><FormControl>
-                <NativeSelect {...field} data-testid="lesson-course">
+                <NativeSelect
+                  {...field}
+                  data-testid="lesson-course"
+                  onChange={(e) => {
+                    field.onChange(e);
+                    if (!lesson) {
+                      const c = courses.find((x) => x.id === e.target.value);
+                      form.setValue("order", nextNumbers[e.target.value] ?? 1);
+                      if (c?.categoryId && !form.getValues("categoryId")) form.setValue("categoryId", c.categoryId);
+                    }
+                  }}
+                >
                   {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
                 </NativeSelect>
               </FormControl><FormMessage /></FormItem>
             )} />
-            <FormField control={form.control} name="slug" render={({ field }) => (
-              <FormItem><FormLabel>Slug (URL)</FormLabel><FormControl><Input {...field} placeholder="avtomatik" /></FormControl><FormMessage /></FormItem>
+            <FormField control={form.control} name="order" render={({ field }) => (
+              <FormItem><FormLabel>Dars raqami</FormLabel><FormControl>
+                <Input type="number" min={1} step={1} inputMode="numeric" {...field} value={String(field.value ?? "")} data-testid="lesson-number" />
+              </FormControl><FormDescription>Kurs ichida takrorlanmaydi. Tartib shu raqam bo‘yicha.</FormDescription><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="level" render={({ field }) => (
+              <FormItem><FormLabel>Kirish darajasi</FormLabel><FormControl>
+                <NativeSelect value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value || null)} data-testid="lesson-level">
+                  <option value="">Ko‘rsatilmagan</option>
+                  {Object.entries(LEVEL_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </NativeSelect>
+              </FormControl><FormMessage /></FormItem>
             )} />
           </div>
+          {(categoryName || title) && (
+            <div className="rounded-xl border border-border bg-surface px-4 py-3" data-testid="lesson-heading-preview">
+              <p className="font-mono text-[11px] tracking-[0.14em] text-gold-soft uppercase">
+                {[categoryName, number ? `${number}-dars` : null].filter(Boolean).join(" — ")}
+              </p>
+              <p className="mt-1 font-display font-semibold">{title || "Dars nomi"}</p>
+            </div>
+          )}
           <FormField control={form.control} name="description" render={({ field }) => (
-            <FormItem><FormLabel>Tavsif</FormLabel><FormControl><Textarea rows={6} {...field} /></FormControl><FormMessage /></FormItem>
+            <FormItem><FormLabel>Dars tavsifi</FormLabel><FormControl><Textarea rows={5} {...field} /></FormControl><FormMessage /></FormItem>
           )} />
 
           <div className="grid gap-3">
@@ -119,15 +179,16 @@ export function LessonForm({
             </Tabs>
             {source === "UPLOAD" && !uploadsAvailable ? (
               <p className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted-foreground" data-testid="uploads-unavailable">
-                Bu serverda (Vercel) video faylni saytning o‘ziga yuklab bo‘lmaydi. Videoni Bunny Stream’ga yuklang va
-                «Bunny Stream / havola» bo‘limiga uning Embed havolasini qo‘ying — u ham faqat PRO foydalanuvchilarga ko‘rinadi.
+                Fayl saqlash hali ulanmagan: Vercel’da videolar Cloudflare R2 (S3) omborida saqlanadi — administrator S3_*
+                sozlamalarini kiritgach, shu yerdan yuklash ishlaydi (docs/FAYL-SAQLASH.md). Hozircha videoni Bunny Stream’ga
+                yuklab, «Bunny Stream / havola» bo‘limiga Embed havolasini qo‘yishingiz mumkin.
               </p>
             ) : source === "UPLOAD" ? (
               <UploadField
                 kind="video"
                 accept="video/mp4,video/webm"
                 label="Video fayl (MP4 yoki WEBM)"
-                hint="Video himoyalangan papkada saqlanadi va faqat PRO foydalanuvchilarga uzatiladi."
+                hint="To‘g‘ridan-to‘g‘ri himoyalangan omborga yuklanadi (katta fayllar bo‘laklab, uzilsa qayta urinadi)."
                 currentLabel={videoKey ? "Video yuklangan" : null}
                 maxBytes={maxVideoBytes}
                 onFileSelected={async (file) => {
@@ -159,29 +220,38 @@ export function LessonForm({
               kind="thumbnail"
               accept="image/png,image/jpeg,image/webp"
               label="Muqova rasmi (ixtiyoriy)"
-              hint={uploadsAvailable ? "16:9, PNG/JPG/WEBP" : "Vercel’da rasm yuklash ishlamaydi — bo‘sh qoldiring, pleyer o‘z rasmini ko‘rsatadi."}
+              hint={uploadsAvailable ? "16:9, PNG/JPG/WEBP" : "Fayl saqlash ulanmagan — bo‘sh qoldiring, pleyer o‘z rasmini ko‘rsatadi."}
               currentLabel={thumbnailKey ? "Rasm yuklangan" : null}
               onUploaded={(f) => form.setValue("thumbnailKey", f.key)}
               onClear={() => form.setValue("thumbnailKey", null)}
             />
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="order" render={({ field }) => (
-                <FormItem><FormLabel>Tartib</FormLabel><FormControl><Input type="number" min={0} {...field} value={String(field.value ?? 0)} /></FormControl><FormMessage /></FormItem>
-              )} />
-              <FormField control={form.control} name="durationSeconds" render={({ field }) => (
-                <FormItem><FormLabel>Davomiylik (s)</FormLabel><FormControl>
-                  <Input type="number" min={0} value={field.value == null ? "" : String(field.value)} onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))} />
-                </FormControl><FormDescription>{duration ? formatDuration(Number(duration)) : "Videodan avtomatik"}</FormDescription><FormMessage /></FormItem>
-              )} />
-            </div>
+            <FormField control={form.control} name="durationSeconds" render={({ field }) => (
+              <FormItem><FormLabel>Davomiyligi (soniya)</FormLabel><FormControl>
+                <Input type="number" min={0} value={field.value == null ? "" : String(field.value)} onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))} data-testid="lesson-duration" />
+              </FormControl><FormDescription>{duration ? formatDuration(Number(duration)) : "Video fayl tanlanganda avtomatik aniqlanadi"}</FormDescription><FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="isFree" render={({ field }) => (
+              <FormItem><FormLabel>Foydalanish huquqi</FormLabel><FormControl>
+                <NativeSelect value={field.value ? "FREE" : "PRO"} onChange={(e) => field.onChange(e.target.value === "FREE")} data-testid="lesson-access">
+                  <option value="PRO">PRO — faqat obunachilar</option>
+                  <option value="FREE">Bepul — ro‘yxatdan o‘tgan hamma</option>
+                </NativeSelect>
+              </FormControl><FormMessage /></FormItem>
+            )} />
             <FormField control={form.control} name="isPublished" render={({ field }) => (
               <FormItem>
                 <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
-                  <FormLabel>Nashr qilish</FormLabel>
-                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} data-testid="lesson-publish" /></FormControl>
+                  <div>
+                    <FormLabel>Holati</FormLabel>
+                    <p className="text-xs text-muted-foreground">{field.value ? "Nashr qilingan" : "Qoralama — faqat adminlar ko‘radi"}</p>
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} data-testid="lesson-publish" aria-label="Nashr qilish" /></FormControl>
                 </div>
                 <FormMessage />
               </FormItem>
+            )} />
+            <FormField control={form.control} name="slug" render={({ field }) => (
+              <FormItem><FormLabel>Slug (URL)</FormLabel><FormControl><Input {...field} placeholder="avtomatik" /></FormControl><FormMessage /></FormItem>
             )} />
           </div>
           <Button type="submit" size="lg" disabled={form.formState.isSubmitting} data-testid="lesson-save">

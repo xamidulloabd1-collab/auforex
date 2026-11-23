@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getViewer } from "@/lib/auth/session";
+import { withFallback } from "@/lib/data/safe";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/shared/logo";
 import { NavLinks } from "./nav-links";
@@ -7,7 +8,7 @@ import { MobileNav } from "./mobile-nav";
 import { UserMenu, type HeaderUser } from "./user-menu";
 
 export async function SiteHeader() {
-  const viewer = await getViewer();
+  const viewer = await withFallback("viewer", getViewer, null);
   const user: HeaderUser | null = viewer
     ? {
         name: viewer.name,

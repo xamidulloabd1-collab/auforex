@@ -1,49 +1,61 @@
-# Video darslar: Bunny Stream + ketma-ket ochilish
+# Video darslar
 
-Videolar YouTube’da emas, **Bunny Stream**’da saqlanadi va faqat saytda, faqat **PRO** foydalanuvchilarga ko‘rinadi.
-Vercel’da video faylni saytning o‘ziga yuklab bo‘lmaydi (server diski faqat o‘qish uchun), shuning uchun video Bunny’da turadi.
+Videolar YouTube’da emas — saytning yopiq omborida (Cloudflare R2) yoki Bunny Stream’da turadi va faqat saytda ko‘rinadi.
+Har bir dars **Bepul** (ro‘yxatdan o‘tgan hamma) yoki **PRO** (faqat PRO obunachilar va adminlar) bo‘ladi.
 
 ## Qanday himoyalangan
 
-- Dars sahifasi va video havolasi faqat PRO (va adminlar) uchun. Mehmon va FREE foydalanuvchi sahifa kodida ham video ID’ni olmaydi.
-- `BUNNY_STREAM_TOKEN_KEY` o‘rnatilgan bo‘lsa, sayt har bir ko‘rishga **6 soat amal qiladigan imzoli havola** beradi
-  (`token = SHA256(kalit + video id + expires)`). Nusxalab tarqatilgan havola 6 soatdan keyin ishlamaydi.
-- Darslar **ketma-ket** ochiladi: kurs ichida keyingi dars oldingisi yakunlangach ochiladi. Bu sahifada, video oqimida
-  va progress API’da tekshiriladi. Adminlar uchun hammasi ochiq.
+- Ruxsati yo‘q foydalanuvchi (mehmon yoki PRO’siz) PRO dars sahifasida faqat dars nomi va “PRO kerak” oynasini ko‘radi —
+  sahifa kodida ham video manzili bo‘lmaydi. Video API ham xuddi shu tekshiruvni qiladi (403).
+- Omborga yuklangan video har ko‘rishda **3 soat amal qiladigan imzoli havola** orqali beriladi; ombor yopiq.
+- Bunny Stream: `BUNNY_STREAM_TOKEN_KEY` o‘rnatilsa, har ko‘rishga **6 soatlik imzoli havola**.
+- Darslar **ketma-ket** ochiladi: kurs ichida keyingi dars oldingisi yakunlangach ochiladi (sahifa, video va progress API’da
+  tekshiriladi). Adminlarga hammasi ochiq. Sozlama: **Super admin → Sozlamalar → Kirish → “Darslar ketma-ket ochilsin”**.
 
-## Bir martalik sozlash
+## Avval bir marta
 
-1. **bunny.net** → ro‘yxatdan o‘ting → **Stream** → **Add Video Library** (masalan “AU Forex”).
-2. Kutubxona → **Security**:
-   - **Token authentication key** qiymatini nusxalang (bu kutubxonaning “API key”idan boshqa narsa).
-   - “Allowed domains” bo‘lsa, `auforex.vercel.app` ni qo‘shing (o‘z domeningiz bo‘lsa, uni ham).
-3. **Vercel** → loyiha → **Settings → Environment Variables**:
-   `BUNNY_STREAM_TOKEN_KEY` = 2-qadamdagi kalit (Production) → **Save** → **Deployments → Redeploy**.
-4. Redeploy tugagach, Bunny’da **Embed view token authentication** ni yoqing.
-   (Tartib muhim: avval kalit saytda bo‘lsin, keyin himoya yoqilsin — aks holda videolar vaqtincha ochilmay qoladi.)
+1. Fayl ombori: [FAYL-SAQLASH.md](FAYL-SAQLASH.md) (R2 + 4 ta `S3_*` o‘zgaruvchi). Busiz “Fayl yuklash” yorlig‘ida
+   ogohlantirish chiqadi va faqat Bunny havolasi ishlaydi.
+2. **Super admin → Kategoriyalar** → “Video dars kategoriyalari”: masalan *Trading asoslari*, *Texnik tahlil*,
+   *Risk menejmenti*. Tartibini ↑/↓ bilan o‘zgartiring — talabalar sahifasida shu tartibda chiqadi.
+   Darslari bor kategoriyani o‘chirib bo‘lmaydi (avval darslarni boshqa kategoriyaga o‘tkazing).
+3. **Super admin → Kurslar** → kurs yarating, kategoriyasini tanlang, “Nashr qilingan”ni yoqing.
 
-## Har bir dars uchun
+## Dars qo‘shish (Super admin → Darslar → Yangi dars)
 
-1. Bunny → kutubxona → **Upload** → videoni yuklang (kodlash tugashini kuting).
-2. Video → **Embed** → havolani nusxalang: `https://iframe.mediadelivery.net/embed/<kutubxona>/<video-id>`
-   (`/play/…` havolasi ham bo‘ladi — sayt uni o‘zi to‘g‘rilaydi).
-3. Saytda: **Super admin → Kurslar** → kurs oching va “Nashr qilingan”ni yoqing.
-4. **Super admin → Darslar → Yangi dars** → sarlavha, kurs → **Bunny Stream / havola** maydoniga havola →
-   **Tartib** (1, 2, 3 …) → **Davomiylik (s)** (masalan 12 daqiqa = 720) → **Nashr qilish** → **Saqlash**.
-   “Muqova rasmi”ni bo‘sh qoldiring — Vercel’da rasm yuklash ishlamaydi, Bunny pleyeri o‘z rasmini ko‘rsatadi.
+| Maydon | Izoh |
+|---|---|
+| Video dars nomi | Masalan “Trend chiziqlari” |
+| Kategoriya | **Majburiy**. Hali tanlanmagan bo‘lsa, kurs tanlanganda kursning kategoriyasi qo‘yiladi |
+| Kurs | Dars qaysi kursda |
+| Dars raqami | 1, 2, 3 … Kurs tanlanganda keyingi bo‘sh raqam o‘zi qo‘yiladi. Bir kursda bir raqam faqat bir marta — band bo‘lsa, qaysi dars egallaganini aytadi |
+| Kirish darajasi | Boshlang‘ich / O‘rta / Yuqori (ixtiyoriy) |
+| Dars tavsifi | Talaba video ostida ko‘radi |
+| Video manbasi | **Fayl yuklash** — MP4/WEBM, foiz ko‘rsatiladi, “Bekor qilish” bor, uzilsa o‘zi qayta urinadi. **Tashqi havola** — Bunny Stream embed havolasi |
+| Muqova rasmi | Ixtiyoriy, 16:9 |
+| Davomiyligi | Fayl tanlanganda o‘zi aniqlanadi |
+| Foydalanish huquqi | **PRO** (standart) yoki **Bepul** |
+| Holati | Qoralama (faqat adminlar ko‘radi) yoki Nashr qilingan |
 
-Darslar **Tartib** raqami bo‘yicha ketma-ket ochiladi. Talaba darsni ko‘rib, **“Yakunlandi deb belgilash”** tugmasini
-bosgach, keyingi dars ochiladi.
+Sarlavha talabaga **“Texnik tahlil — 5-dars”** ko‘rinishida chiqadi (forma tepasida oldindan ko‘rinadi).
 
-## Sozlamalar
+**Darslar ro‘yxati** (Super admin → Darslar): qidiruv, kategoriya/kurs/holat bo‘yicha filtr; har qatorda ko‘rish, ↑/↓
+(raqamlarni almashtiradi), tahrirlash va o‘chirish. O‘chirishdan oldin nechta talaba progressi borligi ko‘rsatiladi.
 
-**Super admin → Sozlamalar → Kirish → “Darslar ketma-ket ochilsin”** — o‘chirilsa, PRO foydalanuvchilarga hamma darslar birdan ochiladi.
+## Bunny Stream (ixtiyoriy)
+
+1. **bunny.net** → **Stream** → **Add Video Library**.
+2. Kutubxona → **Security** → **Token authentication key**ni nusxalang; “Allowed domains”ga `auforex.vercel.app` qo‘shing.
+3. Vercel: `BUNNY_STREAM_TOKEN_KEY` = shu kalit → **Redeploy**. Shundan **keyin** Bunny’da **Embed view token
+   authentication**ni yoqing (aks holda videolar vaqtincha ochilmay qoladi).
+4. Har video: Bunny → Upload → **Embed** havolasi (`https://iframe.mediadelivery.net/embed/<kutubxona>/<video-id>`) →
+   dars formasidagi **Tashqi havola** yorlig‘iga.
 
 ## Muammo bo‘lsa
 
-- Video o‘rnida 403 / “access denied”: Vercel’dagi `BUNNY_STREAM_TOKEN_KEY` Bunny’dagi **Token authentication key**ga mos emas
-  yoki o‘rnatilgandan keyin Redeploy qilinmagan.
-- Dars saqlanmayapti (“havola noto‘g‘ri”): Bunny’dagi Embed havolasini to‘liq qo‘ying (kutubxona raqami + video ID).
+- Yuklash xatolari (CORS, ETag, kalit): [FAYL-SAQLASH.md → Muammo bo‘lsa](FAYL-SAQLASH.md#muammo-bolsa).
+- Bunny videosi o‘rnida 403: `BUNNY_STREAM_TOKEN_KEY` Bunny’dagi **Token authentication key**ga mos emas yoki Redeploy qilinmagan.
+- “Bu kursda N-dars allaqachon bor”: boshqa raqam tanlang yoki ro‘yxatda ↑/↓ bilan tartibni o‘zgartiring.
 
 ## Ko‘p videoni bir buyruq bilan qo‘shish (o‘z kompyuteringizda)
 

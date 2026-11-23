@@ -33,6 +33,14 @@ const nextConfig: NextConfig = {
   // This folder is the project root, even if a package-lock.json exists higher up (e.g. C:\Users\<you>).
   turbopack: { root: path.resolve(__dirname) },
   outputFileTracingRoot: path.resolve(__dirname),
+  // The seeded books/covers are served read-only from the deployment bundle (Vercel has no writable disk).
+  outputFileTracingIncludes: {
+    // Keys are globs ([id] would be a character class), hence the wildcards.
+    "/api/books/*/file": ["./prisma/seed-assets/books/**/*"],
+    "/api/media/**": ["./prisma/seed-assets/covers/**/*"],
+    // "Fayllarni tekshirish" in Super admin → Kitoblar relinks seeded books to these copies.
+    "/super-admin/books": ["./prisma/seed-assets/**/*"],
+  },
   allowedDevOrigins: lanDevOrigins,
   // The floating dev badge covered the phone tab bar and reader buttons. Errors still open the overlay.
   devIndicators: false,

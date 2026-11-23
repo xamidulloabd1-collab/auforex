@@ -22,7 +22,13 @@ export const serverEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
   TRUSTED_ORIGINS: z.string().optional(),
 
-  STORAGE_DRIVER: z.enum(["local"]).default("local"),
+  /** "s3" = Cloudflare R2 / AWS S3 / any S3-compatible bucket (needed on Vercel); "local" = disk. Default: s3 when S3_* are set. */
+  STORAGE_DRIVER: z.enum(["local", "s3"]).optional(),
+  S3_ENDPOINT: z.url({ error: "S3_ENDPOINT to‘liq manzil bo‘lsin (https://…)" }).optional(),
+  S3_REGION: z.string().optional(),
+  S3_BUCKET: z.string().min(3).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(8).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(16).optional(),
   /** Bunny Stream → Library → Security → "Token authentication key" (signs lesson video links). */
   BUNNY_STREAM_TOKEN_KEY: z.string().min(16, "BUNNY_STREAM_TOKEN_KEY juda qisqa").optional(),
   STORAGE_LOCAL_ROOT: z.string().default("./storage"),
@@ -40,6 +46,18 @@ export const serverEnvSchema = z.object({
   REQUIRE_EMAIL_VERIFICATION: z.enum(["true", "false"]).optional(),
 });
 
+export const serverEnvSchemaChecked = serverEnvSchema.superRefine((e, ctx) => {
+  const s3 = [e.S3_ENDPOINT, e.S3_BUCKET, e.S3_ACCESS_KEY_ID, e.S3_SECRET_ACCESS_KEY];
+  const partial = s3.some(Boolean) && !s3.every(Boolean);
+  if (partial || (e.STORAGE_DRIVER === "s3" && !s3.every(Boolean))) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["S3_ENDPOINT"],
+      message: "S3 sozlamalari to‘liq emas: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY hammasi kerak",
+    });
+  }
+});
+
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
 /**
@@ -47,12 +65,35 @@ export type ServerEnv = z.infer<typeof serverEnvSchema>;
  * optional variable keep its default instead of failing validation.
  */
 export function normalizeEnv(source: NodeJS.ProcessEnv | Record<string, string | undefined>) {
-  return Object.fromEntries(Object.entries(source).map(([k, v]) => [k, v === "" ? undefined : v]));
+  const out: Record<string, string | undefined> = Object.fromEntries(
+    Object.entries(source).map(([k, v]) => [k, v === "" ? undefined : v]),
+  );
+  // No site address configured: use the one the host provides instead of http://localhost:3000.
+  if (!out.NEXT_PUBLIC_APP_URL) {
+    const host = vercelSiteHost(out) ?? out.RAILWAY_PUBLIC_DOMAIN;
+    if (host) out.NEXT_PUBLIC_APP_URL = `https://${host}`;
+  }
+  return out;
+}
+
+/** Vercel system variables: the production domain in production, the deployment URL otherwise. */
+export function vercelSiteHost(source: Record<string, string | undefined>) {
+  if (source.VERCEL !== "1") return undefined;
+  if (source.VERCEL_ENV === "production" && source.VERCEL_PROJECT_PRODUCTION_URL) return source.VERCEL_PROJECT_PRODUCTION_URL;
+  return source.VERCEL_BRANCH_URL || source.VERCEL_URL || source.VERCEL_PROJECT_PRODUCTION_URL || undefined;
+}
+
+/** This project's own Vercel domains (production, branch, deployment) — trusted for sign-in. */
+export function vercelOrigins(source: Record<string, string | undefined>) {
+  if (source.VERCEL !== "1") return [];
+  return [source.VERCEL_PROJECT_PRODUCTION_URL, source.VERCEL_BRANCH_URL, source.VERCEL_URL]
+    .filter((h): h is string => Boolean(h))
+    .map((h) => `https://${h}`);
 }
 
 /** Validates a set of variables; returns readable issues instead of throwing. */
 export function checkEnv(source: NodeJS.ProcessEnv | Record<string, string | undefined>) {
-  const parsed = serverEnvSchema.safeParse(normalizeEnv(source));
+  const parsed = serverEnvSchemaChecked.safeParse(normalizeEnv(source));
   return parsed.success
     ? ({ ok: true, data: parsed.data } as const)
     : ({ ok: false, issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) } as const);

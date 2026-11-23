@@ -12,6 +12,7 @@ import { BookCover } from "@/components/books/book-cover";
 import { AdminTitle } from "@/components/admin/admin-title";
 import { ActionSwitch, ConfirmAction } from "@/components/admin/action-controls";
 import { CategoryManager } from "@/components/admin/category-manager";
+import { BookFileCheck } from "@/components/admin/book-file-check";
 
 export default async function AdminBooksPage() {
   await requireAdmin();
@@ -98,7 +99,10 @@ export default async function AdminBooksPage() {
             )}
           </TableBody>
         </Table>
-        <CategoryManager kind="BOOK" categories={categories.map((c) => ({ id: c.id, name: c.name, order: c.order, count: c._count.books }))} />
+        <div className="grid content-start gap-6">
+          <BookFileCheck />
+          <CategoryManager kind="BOOK" categories={categories.map((c) => ({ id: c.id, name: c.name, order: c.order, count: c._count.books }))} />
+        </div>
       </div>
     </>
   );

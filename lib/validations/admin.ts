@@ -31,7 +31,11 @@ export const lessonSchema = z
     slug: optionalSlug,
     description: z.string().trim().max(5000),
     courseId: z.string().trim().min(1, "Kursni tanlang"),
-    order: orderField,
+    categoryId: z.string().trim().min(1, "Kategoriyani tanlang").max(40),
+    /** Lesson number inside the course ("5-dars"). */
+    order: z.coerce.number({ error: "Dars raqamini kiriting" }).int("Dars raqami butun son bo‘lsin").min(1, "Dars raqami 1 dan boshlanadi").max(10_000),
+    level: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]).nullable(),
+    isFree: z.boolean(),
     durationSeconds: z.coerce.number().int().min(0).max(60 * 60 * 24).nullable(),
     videoSource: z.enum(["UPLOAD", "EMBED"]),
     videoKey: z.string().nullable(),
