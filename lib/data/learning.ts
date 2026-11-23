@@ -1,6 +1,10 @@
 import "server-only";
 import { prisma } from "@/lib/db/prisma";
+import { env } from "@/lib/env";
+import { blockingLesson, lockedLessonIds } from "@/lib/lessons/sequence";
+import { getSetting } from "@/lib/settings";
 import { publicMediaUrl } from "@/lib/storage/keys";
+import { signBunnyEmbed } from "@/lib/video/bunny";
 
 /** Published lessons are ordered by course order, then lesson order. */
 const publishedLessonWhere = { isPublished: true, course: { isPublished: true } } as const;
@@ -30,6 +34,8 @@ export type LessonCard = {
   categorySlug: string | null;
   progressPercent: number;
   completed: boolean;
+  /** Sequential mode: an earlier lesson of the course is not completed yet. */
+  locked: boolean;
   lastViewedAt: Date | null;
 };
 
@@ -75,7 +81,8 @@ export async function getBookPreviews(limit = 3) {
 }
 
 /** Full catalogue for PRO users (still metadata only — media goes through protected routes). */
-export async function getLessonCatalog(userId: string) {
+export async function getLessonCatalog(userId: string, opts: { isAdmin?: boolean } = {}) {
+  const sequential = !opts.isAdmin && (await getSetting("access")).sequentialLessons;
   const [courses, progress] = await Promise.all([
     prisma.course.findMany({
       where: { isPublished: true, lessons: { some: { isPublished: true } } },
@@ -100,8 +107,12 @@ export async function getLessonCatalog(userId: string) {
   ]);
 
   const byLesson = new Map(progress.map((p) => [p.lessonId, p]));
-  const lessons: LessonCard[] = courses.flatMap((c) =>
-    c.lessons.map((l) => {
+  const lessons: LessonCard[] = courses.flatMap((c) => {
+    const locked = lockedLessonIds(
+      c.lessons.map((l) => ({ id: l.id, completed: Boolean(byLesson.get(l.id)?.completedAt) })),
+      sequential,
+    );
+    return c.lessons.map((l) => {
       const p = byLesson.get(l.id);
       return {
         id: l.id,
@@ -116,14 +127,15 @@ export async function getLessonCatalog(userId: string) {
         categorySlug: c.category?.slug ?? null,
         progressPercent: p?.completedAt ? 100 : (p?.percent ?? 0),
         completed: Boolean(p?.completedAt),
+        locked: locked.has(l.id),
         lastViewedAt: p?.lastViewedAt ?? null,
       };
-    }),
-  );
+    });
+  });
 
   const completed = lessons.filter((l) => l.completed).length;
   const continueWatching = lessons
-    .filter((l) => !l.completed && l.lastViewedAt && l.progressPercent > 0)
+    .filter((l) => !l.completed && !l.locked && l.lastViewedAt && l.progressPercent > 0)
     .sort((a, b) => (b.lastViewedAt?.getTime() ?? 0) - (a.lastViewedAt?.getTime() ?? 0))
     .slice(0, 3);
 
@@ -192,6 +204,15 @@ export async function getLessonForViewer(slug: string, opts: { userId: string; i
   });
   const cp = new Map(courseProgress.map((p) => [p.lessonId, p]));
 
+  // Sequential mode (Super admin → Sozlamalar → Kirish): admins are never locked out.
+  const sequential = !opts.isAdmin && (await getSetting("access")).sequentialLessons;
+  const sequence = courseLessons.map((l) => ({ ...l, completed: Boolean(cp.get(l.id)?.completedAt) }));
+  const locked = lockedLessonIds(sequence, sequential);
+  const blocker = blockingLesson(sequence, lesson.id, sequential);
+  const embedUrl =
+    lesson.videoSource === "EMBED" && lesson.embedUrl && !blocker ? signBunnyEmbed(lesson.embedUrl, env().BUNNY_STREAM_TOKEN_KEY) : null;
+  const nextLesson = index >= 0 && index < ordered.length - 1 ? ordered[index + 1]! : null;
+
   return {
     lesson: {
       id: lesson.id,
@@ -201,7 +222,7 @@ export async function getLessonForViewer(slug: string, opts: { userId: string; i
       durationSeconds: lesson.durationSeconds,
       videoSource: lesson.videoSource,
       hasVideo: lesson.videoSource === "UPLOAD" ? Boolean(lesson.videoKey) : Boolean(lesson.embedUrl),
-      embedUrl: lesson.videoSource === "EMBED" ? lesson.embedUrl : null,
+      embedUrl,
       posterUrl: publicMediaUrl(lesson.thumbnailKey),
       isPublished: visible,
       course: { title: lesson.course.title, slug: lesson.course.slug, categoryName: lesson.course.category?.name ?? null },
@@ -210,13 +231,16 @@ export async function getLessonForViewer(slug: string, opts: { userId: string; i
       ? { positionSeconds: progress.positionSeconds, percent: progress.percent, completed: Boolean(progress.completedAt) }
       : null,
     prev: index > 0 ? ordered[index - 1]! : null,
-    next: index >= 0 && index < ordered.length - 1 ? ordered[index + 1]! : null,
+    next: nextLesson ? { ...nextLesson, locked: locked.has(nextLesson.id) } : null,
+    /** Set when this lesson is still locked: the lesson to finish first. */
+    blocker: blocker ? { slug: blocker.slug, title: blocker.title } : null,
     position: index + 1,
     total: ordered.length,
     courseLessons: courseLessons.map((l) => ({
       ...l,
       completed: Boolean(cp.get(l.id)?.completedAt),
       percent: cp.get(l.id)?.percent ?? 0,
+      locked: locked.has(l.id),
     })),
   };
 }
@@ -298,4 +322,25 @@ export async function getBookForViewer(slug: string, opts: { userId: string; isA
     select: { currentPage: true, percent: true },
   });
   return { book, progress };
+}
+
+/**
+ * For API routes: the lesson a viewer must finish before `lessonId` opens, or null when it is
+ * open (sequential mode off, admin, or every earlier lesson in the course completed).
+ */
+export async function getLessonBlocker(lessonId: string, viewer: { id: string; isAdmin: boolean }) {
+  if (viewer.isAdmin || !(await getSetting("access")).sequentialLessons) return null;
+  const lesson = await prisma.lesson.findUnique({ where: { id: lessonId }, select: { courseId: true } });
+  if (!lesson) return null;
+  const lessons = await prisma.lesson.findMany({
+    where: { courseId: lesson.courseId, isPublished: true },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    select: { id: true, slug: true, title: true },
+  });
+  const done = await prisma.lessonProgress.findMany({
+    where: { userId: viewer.id, lessonId: { in: lessons.map((l) => l.id) }, completedAt: { not: null } },
+    select: { lessonId: true },
+  });
+  const completed = new Set(done.map((d) => d.lessonId));
+  return blockingLesson(lessons.map((l) => ({ ...l, completed: completed.has(l.id) })), lessonId);
 }

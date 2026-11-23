@@ -3,6 +3,7 @@ import { z } from "zod";
 import { assertSameOrigin, handleRouteError, jsonError } from "@/lib/api";
 import { assertUser } from "@/lib/auth/session";
 import { checkLessonAchievements } from "@/lib/achievements";
+import { getLessonBlocker } from "@/lib/data/learning";
 import { prisma } from "@/lib/db/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -29,6 +30,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/lessons/[id
     if (!lesson || (!(lesson.isPublished && lesson.course.isPublished) && !viewer.isAdmin)) {
       return jsonError(404, "Dars topilmadi");
     }
+    const blocker = await getLessonBlocker(lesson.id, viewer);
+    if (blocker) return jsonError(403, `Avval «${blocker.title}» darsini yakunlang`);
 
     const duration = body.durationSeconds || lesson.durationSeconds || null;
     const position = Math.floor(body.positionSeconds);

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ExternalLinkIcon } from "lucide-react";
 import { requireAdmin } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { uploadLimitBytes } from "@/lib/storage";
+import { isReadOnlyHost, uploadLimitBytes } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { AdminTitle } from "@/components/admin/admin-title";
 import { LessonForm } from "@/components/admin/lesson-form";
@@ -32,6 +32,7 @@ export default async function EditLessonPage({ params }: PageProps<"/super-admin
       <LessonForm
         courses={courses}
         maxVideoBytes={uploadLimitBytes("video")}
+        uploadsAvailable={!isReadOnlyHost()}
         lesson={{
           id: lesson.id,
           title: lesson.title,

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeftIcon, ArrowRightIcon, CheckCircle2Icon, PlayIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, CheckCircle2Icon, LockIcon, PlayIcon } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
 import { getLessonForViewer } from "@/lib/data/learning";
 import { cn, formatDuration } from "@/lib/utils";
@@ -25,7 +25,7 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[slug]"
 
   const data = await getLessonForViewer(slug, { userId: viewer.id, isAdmin: viewer.isAdmin });
   if (!data) notFound();
-  const { lesson, progress, prev, next, courseLessons } = data;
+  const { lesson, progress, prev, next, courseLessons, blocker } = data;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
@@ -35,17 +35,39 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[slug]"
 
       <div className="mt-3 grid grid-cols-1 gap-8 sm:mt-6 lg:grid-cols-[1fr_340px]">
         <div className="min-w-0">
-          <LessonPlayer
-            lessonId={lesson.id}
-            source={lesson.videoSource}
-            embedUrl={lesson.embedUrl}
-            posterUrl={lesson.posterUrl}
-            hasVideo={lesson.hasVideo}
-            initialPosition={progress?.positionSeconds ?? 0}
-            initialCompleted={progress?.completed ?? false}
-            watermark={viewer.email}
-            title={lesson.title}
-          />
+          {blocker ? (
+            <div
+              className="-mx-4 grid aspect-video place-items-center border-y border-border-strong bg-surface p-6 text-center sm:mx-0 sm:rounded-2xl sm:border"
+              data-testid="lesson-locked"
+            >
+              <div className="max-w-md">
+                <span className="mx-auto grid size-12 place-items-center rounded-full border border-border bg-card-elevated">
+                  <LockIcon className="size-5 text-gold-soft" />
+                </span>
+                <p className="mt-4 font-display text-lg font-bold">Bu dars hali yopiq</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Darslar ketma-ket ochiladi. Avval «{blocker.title}» darsini yakunlang — shundan so‘ng bu dars ochiladi.
+                </p>
+                <Button asChild className="mt-5">
+                  <Link href={`/lessons/${blocker.slug}`} data-testid="go-to-blocker">
+                    <PlayIcon /> Shu darsga o‘tish
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <LessonPlayer
+              lessonId={lesson.id}
+              source={lesson.videoSource}
+              embedUrl={lesson.embedUrl}
+              posterUrl={lesson.posterUrl}
+              hasVideo={lesson.hasVideo}
+              initialPosition={progress?.positionSeconds ?? 0}
+              initialCompleted={progress?.completed ?? false}
+              watermark={viewer.email}
+              title={lesson.title}
+            />
+          )}
 
           <div className="mt-8">
             <div className="flex flex-wrap items-center gap-2">
@@ -78,10 +100,12 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[slug]"
               <Button asChild variant="secondary" className="h-auto justify-end py-3 text-right">
                 <Link href={`/lessons/${next.slug}`} data-testid="next-lesson">
                   <span className="min-w-0">
-                    <span className="block text-xs font-normal text-muted-foreground">Keyingi dars</span>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {next.locked ? "Keyingi dars · bu darsni yakunlagach ochiladi" : "Keyingi dars"}
+                    </span>
                     <span className="block truncate">{next.title}</span>
                   </span>
-                  <ArrowRightIcon />
+                  {next.locked ? <LockIcon /> : <ArrowRightIcon />}
                 </Link>
               </Button>
             )}
@@ -105,10 +129,19 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[slug]"
                       className={cn(
                         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
                         active ? "bg-card-elevated text-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                        l.locked && !active && "opacity-60",
                       )}
                     >
                       <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-border font-mono text-xs">
-                        {l.completed ? <CheckCircle2Icon className="size-4 text-success" /> : active ? <PlayIcon className="size-3.5 text-gold-soft" /> : i + 1}
+                        {l.completed ? (
+                          <CheckCircle2Icon className="size-4 text-success" />
+                        ) : active ? (
+                          <PlayIcon className="size-3.5 text-gold-soft" />
+                        ) : l.locked ? (
+                          <LockIcon className="size-3.5" aria-label="Yopiq" />
+                        ) : (
+                          i + 1
+                        )}
                       </span>
                       <span className="line-clamp-2 flex-1">{l.title}</span>
                       <span className="font-mono text-[11px] text-muted-foreground">{formatDuration(l.durationSeconds)}</span>

@@ -26,7 +26,7 @@ export default async function LessonsPage() {
     );
   }
 
-  const catalog = await getLessonCatalog(viewer.id);
+  const catalog = await getLessonCatalog(viewer.id, { isAdmin: viewer.isAdmin });
   const totalSeconds = catalog.lessons.reduce((s, l) => s + (l.durationSeconds ?? 0), 0);
 
   return (
@@ -34,7 +34,7 @@ export default async function LessonsPage() {
       <PageHeader
         eyebrow="Video darsliklar"
         title="Video darsliklar"
-        description="Kurslar bo‘yicha tartiblangan darslar. O‘rganish jarayoningiz avtomatik saqlanadi."
+        description={catalog.lessons.some((l) => l.locked) ? "Darslar ketma-ket ochiladi: keyingi dars oldingisini yakunlaganingizdan so‘ng ochiladi." : "Kurslar bo‘yicha tartiblangan darslar. O‘rganish jarayoningiz avtomatik saqlanadi."}
         actions={
           catalog.stats.total > 0 ? (
             <div className="card-surface w-full min-w-64 p-4 sm:w-auto" data-testid="learning-progress">

@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { uploadLimitBytes } from "@/lib/storage";
+import { isReadOnlyHost, uploadLimitBytes } from "@/lib/storage";
 import { AdminTitle } from "@/components/admin/admin-title";
 import { LessonForm } from "@/components/admin/lesson-form";
 
@@ -11,7 +11,7 @@ export default async function NewLessonPage({ searchParams }: PageProps<"/super-
   return (
     <>
       <AdminTitle title="Yangi dars" />
-      <LessonForm courses={courses} defaultCourseId={typeof sp.course === "string" ? sp.course : undefined} maxVideoBytes={uploadLimitBytes("video")} />
+      <LessonForm courses={courses} defaultCourseId={typeof sp.course === "string" ? sp.course : undefined} maxVideoBytes={uploadLimitBytes("video")} uploadsAvailable={!isReadOnlyHost()} />
     </>
   );
 }

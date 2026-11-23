@@ -23,6 +23,8 @@ export const serverEnvSchema = z.object({
   TRUSTED_ORIGINS: z.string().optional(),
 
   STORAGE_DRIVER: z.enum(["local"]).default("local"),
+  /** Bunny Stream → Library → Security → "Token authentication key" (signs lesson video links). */
+  BUNNY_STREAM_TOKEN_KEY: z.string().min(16, "BUNNY_STREAM_TOKEN_KEY juda qisqa").optional(),
   STORAGE_LOCAL_ROOT: z.string().default("./storage"),
   MAX_VIDEO_UPLOAD_MB: z.coerce.number().int().positive().default(2048),
   MAX_BOOK_UPLOAD_MB: z.coerce.number().int().positive().default(100),

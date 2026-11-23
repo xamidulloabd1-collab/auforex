@@ -227,6 +227,21 @@ export function AccessForm({ defaults }: { defaults: SettingsValue<"access"> }) 
           </label>
         )}
       />
+      <Controller
+        control={form.control}
+        name="sequentialLessons"
+        render={({ field }) => (
+          <label className="flex items-center justify-between gap-4 rounded-xl border border-border bg-surface px-4 py-3">
+            <span>
+              <span className="block text-sm font-medium">Darslar ketma-ket ochilsin</span>
+              <span className="block text-xs text-muted-foreground">
+                Har bir kursda keyingi dars oldingisi yakunlangach ochiladi. Adminlar uchun hamma darslar ochiq.
+              </span>
+            </span>
+            <Switch checked={field.value} onCheckedChange={field.onChange} data-testid="sequential-lessons" />
+          </label>
+        )}
+      />
       <SaveBar pending={pending} />
     </form>
   );

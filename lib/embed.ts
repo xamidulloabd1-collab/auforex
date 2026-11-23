@@ -1,8 +1,9 @@
 import { VIDEO_EMBED_HOSTS } from "@/lib/constants";
+import { isBunnyHost, normalizeBunnyUrl } from "@/lib/video/bunny";
 
 /**
  * Normalises an external video URL to an allow-listed embed URL.
- * Supports YouTube (watch / youtu.be / embed), Vimeo and Bunny Stream iframe URLs.
+ * Supports YouTube (watch / youtu.be / embed), Vimeo and Bunny Stream embed/play URLs.
  * Returns null for anything else.
  */
 export function normalizeEmbedUrl(input: string): string | null {
@@ -29,6 +30,8 @@ export function normalizeEmbedUrl(input: string): string | null {
     const id = url.pathname.split("/").filter(Boolean)[0];
     return id && /^\d+$/.test(id) ? `https://player.vimeo.com/video/${id}` : null;
   }
+  // Bunny Stream: only real embed/play links (library + video id); stored without any token.
+  if (isBunnyHost(host)) return normalizeBunnyUrl(input);
   if ((VIDEO_EMBED_HOSTS as readonly string[]).includes(host)) {
     return `https://${host}${url.pathname}${url.search}`;
   }

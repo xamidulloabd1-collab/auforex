@@ -150,6 +150,11 @@ export function getStorage(): StorageDriver {
   return driver!;
 }
 
+/** Vercel runs the app from a read-only file system: uploaded files cannot be saved there. */
+export function isReadOnlyHost() {
+  return process.env.VERCEL === "1";
+}
+
 export function uploadLimitBytes(kind: UploadKind) {
   const e = env();
   const mb =
@@ -160,6 +165,15 @@ export function uploadLimitBytes(kind: UploadKind) {
 /** Streams an upload request body into storage for the given kind. */
 export async function storeUpload(kind: UploadKind, body: ReadableStream<Uint8Array> | null) {
   if (!body) throw new UploadError("Fayl yuborilmadi", 400);
+  if (isReadOnlyHost()) {
+    body.cancel().catch(() => {});
+    throw new UploadError(
+      kind === "video"
+        ? "Vercel’da video faylni saytga yuklab bo‘lmaydi. Videoni Bunny Stream’ga yuklab, Embed havolasini qo‘ying."
+        : "Vercel’da fayl yuklash hozircha ishlamaydi (server diski faqat o‘qish uchun).",
+      503,
+    );
+  }
   const cfg = UPLOAD_KINDS[kind];
   return getStorage().putStream(cfg.area, body, {
     maxBytes: uploadLimitBytes(kind),

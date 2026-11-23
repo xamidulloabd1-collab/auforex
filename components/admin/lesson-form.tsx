@@ -44,11 +44,14 @@ export function LessonForm({
   courses,
   defaultCourseId,
   maxVideoBytes,
+  uploadsAvailable = true,
 }: {
   lesson?: Values & { id: string };
   courses: { id: string; title: string }[];
   defaultCourseId?: string;
   maxVideoBytes: number;
+  /** False on hosts with a read-only disk (Vercel): videos come from Bunny Stream instead. */
+  uploadsAvailable?: boolean;
 }) {
   const router = useRouter();
   const form = useForm<Values>({
@@ -60,7 +63,7 @@ export function LessonForm({
       courseId: defaultCourseId ?? courses[0]?.id ?? "",
       order: 0,
       durationSeconds: null,
-      videoSource: "UPLOAD",
+      videoSource: uploadsAvailable ? "UPLOAD" : "EMBED",
       videoKey: null,
       embedUrl: "",
       thumbnailKey: null,
@@ -111,10 +114,15 @@ export function LessonForm({
             <Tabs value={source} onValueChange={(v) => form.setValue("videoSource", v as "UPLOAD" | "EMBED", { shouldValidate: true })}>
               <TabsList>
                 <TabsTrigger value="UPLOAD">Fayl yuklash</TabsTrigger>
-                <TabsTrigger value="EMBED">Tashqi havola</TabsTrigger>
+                <TabsTrigger value="EMBED">{uploadsAvailable ? "Tashqi havola" : "Bunny Stream / havola"}</TabsTrigger>
               </TabsList>
             </Tabs>
-            {source === "UPLOAD" ? (
+            {source === "UPLOAD" && !uploadsAvailable ? (
+              <p className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted-foreground" data-testid="uploads-unavailable">
+                Bu serverda (Vercel) video faylni saytning o‘ziga yuklab bo‘lmaydi. Videoni Bunny Stream’ga yuklang va
+                «Bunny Stream / havola» bo‘limiga uning Embed havolasini qo‘ying — u ham faqat PRO foydalanuvchilarga ko‘rinadi.
+              </p>
+            ) : source === "UPLOAD" ? (
               <UploadField
                 kind="video"
                 accept="video/mp4,video/webm"
@@ -133,8 +141,11 @@ export function LessonForm({
             ) : (
               <FormField control={form.control} name="embedUrl" render={({ field }) => (
                 <FormItem>
-                  <FormControl><Input {...field} placeholder="https://youtu.be/… yoki https://vimeo.com/…" /></FormControl>
-                  <FormDescription>YouTube (yashirin/unlisted), Vimeo yoki Bunny Stream havolasi. Havola faqat PRO foydalanuvchilarga ko‘rsatiladi, lekin tashqi platforma sozlamalarini ham himoyalang.</FormDescription>
+                  <FormControl><Input {...field} placeholder="https://iframe.mediadelivery.net/embed/123456/…" data-testid="lesson-embed-url" /></FormControl>
+                  <FormDescription>
+                    Bunny Stream (tavsiya): Video → Embed bo‘limidagi havola. Token himoyasi yoqilgan bo‘lsa, sayt har bir PRO
+                    foydalanuvchiga 6 soat amal qiladigan alohida havola beradi. YouTube va Vimeo havolalari ham qabul qilinadi.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )} />
@@ -148,7 +159,7 @@ export function LessonForm({
               kind="thumbnail"
               accept="image/png,image/jpeg,image/webp"
               label="Muqova rasmi (ixtiyoriy)"
-              hint="16:9, PNG/JPG/WEBP"
+              hint={uploadsAvailable ? "16:9, PNG/JPG/WEBP" : "Vercel’da rasm yuklash ishlamaydi — bo‘sh qoldiring, pleyer o‘z rasmini ko‘rsatadi."}
               currentLabel={thumbnailKey ? "Rasm yuklangan" : null}
               onUploaded={(f) => form.setValue("thumbnailKey", f.key)}
               onClear={() => form.setValue("thumbnailKey", null)}

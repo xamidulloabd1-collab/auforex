@@ -1,10 +1,12 @@
 import { getViewer } from "@/lib/auth/session";
+import { getLessonBlocker } from "@/lib/data/learning";
 import { prisma } from "@/lib/db/prisma";
 import { fileResponse, PRIVATE_NO_STORE } from "@/lib/storage/serve";
 
 /**
  * Streams an uploaded lesson video with Range support.
- * Access: PRO (or admin) + lesson and course published (admins may preview drafts).
+ * Access: PRO (or admin) + lesson and course published (admins may preview drafts),
+ * and — in sequential mode — every earlier lesson of the course completed.
  */
 async function handle(request: Request, ctx: RouteContext<"/api/lessons/[id]/video">) {
   const { id } = await ctx.params;
@@ -19,6 +21,9 @@ async function handle(request: Request, ctx: RouteContext<"/api/lessons/[id]/vid
   const visible = lesson && lesson.isPublished && lesson.course.isPublished;
   if (!lesson || (!visible && !viewer.isAdmin) || lesson.videoSource !== "UPLOAD" || !lesson.videoKey) {
     return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+  if (await getLessonBlocker(id, viewer)) {
+    return new Response("Finish the previous lesson first", { status: 403, headers: { "Cache-Control": "no-store" } });
   }
 
   return fileResponse(request, {

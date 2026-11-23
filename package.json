@@ -26,6 +26,7 @@
     "db:studio": "prisma studio",
     "admin:create": "tsx scripts/create-admin.ts",
     "founder:password": "tsx scripts/founder-password.ts",
+    "videos:import": "tsx scripts/import-videos.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "postinstall": "prisma generate && node scripts/copy-pdf-worker.mjs"

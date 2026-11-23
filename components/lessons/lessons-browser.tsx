@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2Icon, ClockIcon, SearchIcon, XIcon } from "lucide-react";
+import { CheckCircle2Icon, ClockIcon, LockIcon, SearchIcon, XIcon } from "lucide-react";
 import { cn, formatDuration } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -22,6 +22,8 @@ export type BrowserLesson = {
   categorySlug: string | null;
   progressPercent: number;
   completed: boolean;
+  /** Sequential mode: opens after the earlier lessons of the course are completed. */
+  locked: boolean;
 };
 
 type Course = { id: string; slug: string; title: string; description: string | null; categoryName: string | null; lessonIds: string[] };
@@ -121,14 +123,36 @@ export function LessonsBrowser({
                 <ul className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                   {items.map((l) => (
                     <li key={l.id}>
-                      <Link href={`/lessons/${l.slug}`} className="group block" data-testid="lesson-card">
-                        <LessonThumb url={l.thumbnailUrl} title={l.title} />
+                      <Link
+                        href={`/lessons/${l.slug}`}
+                        className={cn("group block", l.locked && "opacity-60")}
+                        data-testid="lesson-card"
+                        data-locked={l.locked ? "true" : undefined}
+                      >
+                        <div className="relative">
+                          <LessonThumb url={l.thumbnailUrl} title={l.title} />
+                          {l.locked && (
+                            <div className="absolute inset-0 grid place-items-center rounded-xl bg-black/55">
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/80 px-3 py-1 text-xs">
+                                <LockIcon className="size-3.5" /> Yopiq
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         <div className="mt-4 flex items-start gap-3">
                           <div className="min-w-0 flex-1">
-                            <h3 className="line-clamp-2 font-display font-semibold transition-colors group-hover:text-gold-soft">{l.title}</h3>
-                            {l.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{l.description}</p>}
+                            <p className="font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
+                              {course.lessonIds.indexOf(l.id) + 1}-dars
+                            </p>
+                            <h3 className="mt-0.5 line-clamp-2 font-display font-semibold transition-colors group-hover:text-gold-soft">{l.title}</h3>
+                            {l.locked ? (
+                              <p className="mt-1 text-sm text-muted-foreground">Oldingi darsni yakunlagach ochiladi.</p>
+                            ) : (
+                              l.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{l.description}</p>
+                            )}
                           </div>
                           {l.completed && <CheckCircle2Icon className="mt-0.5 size-5 shrink-0 text-success" aria-label="Yakunlangan" />}
+                          {l.locked && <LockIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-label="Yopiq" />}
                         </div>
                         <div className="mt-3 flex items-center gap-3">
                           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">

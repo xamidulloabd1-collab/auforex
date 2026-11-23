@@ -86,6 +86,8 @@ export const founderSettingsSchema = z.object({
 
 export const accessSettingsSchema = z.object({
   tradingviewRequiresPro: z.boolean(),
+  /** Inside a course, a lesson opens only after the previous ones are completed. */
+  sequentialLessons: z.boolean(),
 });
 
 export const SETTINGS_SCHEMAS = {
@@ -225,5 +227,6 @@ export const DEFAULT_SETTINGS: { [K in SettingsKey]: SettingsValue<K> } = {
   founder: FOUNDER_PROFILE,
   access: {
     tradingviewRequiresPro: false,
+    sequentialLessons: true,
   },
 };
