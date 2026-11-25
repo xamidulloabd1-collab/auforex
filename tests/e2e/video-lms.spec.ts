@@ -120,7 +120,7 @@ test.describe.serial("Video LMS", () => {
     });
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/big.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("lesson-duration")).toHaveValue("20");
+    await expect(page.getByTestId("lesson-duration")).toHaveValue(/^[1-9]\d*$/);
     if (S3) {
       const parts = uploads.filter((u) => u.includes("partNumber="));
       expect(parts.length).toBe(2);

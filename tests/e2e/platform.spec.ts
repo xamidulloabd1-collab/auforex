@@ -473,6 +473,7 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     await expect(iframe.or(fallback).first()).toBeVisible({ timeout: 25_000 });
     await page.getByRole("radio", { name: "GBP/USD" }).click();
     await expect(page.getByRole("radio", { name: "GBP/USD" })).toHaveAttribute("aria-checked", "true");
+    await expect(iframe).toHaveAttribute("src", /symbol=FX%3AGBPUSD/);
     await expect(page.getByText("real vaqt rejimi kafolatlanmaydi")).toBeVisible();
   });
 
