@@ -44,7 +44,21 @@ yangi migratsiya yo‘q, `prisma/` papkasi o‘zgarmagan. Mavjud foydalanuvchila
 - ESLint ogohlantirishlari 5 tadan 0 ga tushdi (React Hook Form `watch` → `useWatch`).
 - `npm run doctor` R2 manzili formatini va SMTP holatini ham tekshiradi.
 
-## 2. Production’ga chiqarish (tasdiqdan keyin)
+## 2. Birlashtirishdan oldin hal qilinishi SHART (Vercel API orqali tekshirildi, 26.11.2026)
+
+1. **Production’da SMTP yo‘q** (`SMTP_*`, `MAIL_FROM` umuman kiritilmagan). Hozirgi `main` (`68a3601`) SMTP bo‘lmasa
+   email tasdiqlashni o‘chirib qo‘yadi. `9a5fcdc` dan boshlab esa production’da tasdiqlash majburiy. Demak bu PR
+   (yoki PR #2) SMTP’siz birlashtirilsa, **yangi foydalanuvchilar ro‘yxatdan o‘ta olmaydi** (“Pochta xizmati
+   sozlanmagan”). Ikki yo‘l bor:
+   - **tavsiya:** birlashtirishdan oldin Production’ga SMTP kiriting ([EMAIL.md](EMAIL.md)) va Preview’da sinab ko‘ring;
+   - yoki ongli ravishda Production’ga `REQUIRE_EMAIL_VERIFICATION=false` qo‘shing (avvalgi xatti-harakat:
+     tasdiqlashsiz ro‘yxatdan o‘tish; parol tiklash baribir ishlamaydi).
+2. **Preview production bazasiga ulangan** (`DATABASE_URL`/`DATABASE_URL_POOLED` Preview+Production uchun umumiy).
+   Preview’da sinov o‘tkazishdan oldin [PREVIEW.md](PREVIEW.md) bo‘yicha alohida test bazasini ulang.
+3. Tavsiya: Vercel loyihasi Node **26.x** da build qiladi, `package.json` da `"node": ">=20.9.0"` (Vercel ogohlantiradi:
+   yangi major chiqsa avtomatik o‘tadi). Lokal sinovlar Node 22 da o‘tdi; Preview build Node 26 da muvaffaqiyatli.
+
+## 3. Production’ga chiqarish (tasdiqdan keyin)
 
 1. **Zaxira** (baza o‘zgarmasa ham tavsiya etiladi): [VERCEL.md](VERCEL.md) → “zaxira nusxa” bo‘limidagi `pg_dump` buyrug‘i.
 2. **GitHub**: `claude/final-stabilization` → `main` ga Pull Request oching, o‘zgarishlarni ko‘rib chiqing va birlashtiring.
@@ -62,7 +76,7 @@ yangi migratsiya yo‘q, `prisma/` papkasi o‘zgarmagan. Mavjud foydalanuvchila
    Tavsiya: `DATABASE_URL_POOLED` (host `pooled.db.prisma.io`) — bo‘lmasa ham Vercel’da avtomatik tanlanadi.
 4. O‘zgaruvchi qo‘shilgan/o‘zgargan bo‘lsa: **Deployments → oxirgi deploy → ⋯ → Redeploy**.
 
-## 3. Deploy’dan keyin tekshirish (10 daqiqa)
+## 4. Deploy’dan keyin tekshirish (10 daqiqa)
 
 1. `https://<sayt>/api/health` →
    `"status":"ok"`, `"database":{"pooled":true,"poolMax":2}`, `"storage":{"driver":"s3","uploads":"ok"}`,
@@ -75,17 +89,17 @@ yangi migratsiya yo‘q, `prisma/` papkasi o‘zgarmagan. Mavjud foydalanuvchila
 5. Super admin → Darslar → yangi dars → 15–50 MB video yuklang (foiz 100% gacha) → saqlang → dars sahifasida o‘ynasin.
 6. Kitoblar → kitob oching (sahifalar ko‘rinsin); telefonda ham bitta dars va bitta kitobni oching.
 
-## 4. Orqaga qaytarish (muammo chiqsa)
+## 5. Orqaga qaytarish (muammo chiqsa)
 
 Vercel → **Deployments** → oldingi ishlagan deploy → **⋯ → Instant Rollback** (yoki “Promote to Production”).
 Bu relizda migratsiya yo‘q, shuning uchun bazani tiklash shart emas.
 
-## 5. Sinov natijalari
+## 6. Sinov natijalari
 
 To‘liq jadval: [TEST_RESULTS.md](TEST_RESULTS.md). Qisqacha: TypeScript ✓, ESLint 0 xato / 0 ogohlantirish,
 unit testlar, production build, va E2E uch rejimda — lokal disk, Vercel rejimi + CORS’ni tekshiradigan S3 emulyatori,
 haqiqiy SMTP serveri (email tasdiqlash va parol tiklash).
 
 **Sinalmagan (bu muhitdan kirish yo‘q):** haqiqiy Cloudflare R2 bucket, haqiqiy email provayderi, jonli
-auforex.vercel.app. Shu sababli bu reliz “production’ga tayyor” deb faqat 3-bo‘limdagi tekshiruvlar
-haqiqiy kalitlar bilan ✓ bo‘lgandan keyin hisoblanadi.
+auforex.vercel.app. Shu sababli bu reliz “production’ga tayyor” deb faqat 4-bo‘limdagi tekshiruvlar
+haqiqiy kalitlar bilan ✓ bo‘lgandan keyin hisoblanadi (avval Preview’da: [PREVIEW.md](PREVIEW.md)).

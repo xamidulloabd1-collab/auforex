@@ -258,7 +258,7 @@ docker compose up -d --build   # migrations and seed run automatically on start
 Put Nginx/Caddy in front for TLS. Keep `client_max_body_size` ≥ `MAX_VIDEO_UPLOAD_MB` and raise proxy timeouts for large uploads.
 
 ### Vercel (current production: auforex.vercel.app)
-Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md) and [docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md).
+Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md), [docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md), [docs/EMAIL.md](docs/EMAIL.md); isolated Preview (own database, bucket, mail): [docs/PREVIEW.md](docs/PREVIEW.md); release steps and merge blockers: [docs/RELIZ.md](docs/RELIZ.md).
 * `vercel.json` runs `npm run build:vercel` (`scripts/vercel-build.mjs`): checks required settings → **production only** `prisma migrate deploy` (never resets) → `next build`. Seed only with `SEED_ON_BUILD=true`.
 * Files live in S3-compatible object storage (Cloudflare R2). The browser uploads straight to the bucket with presigned URLs (single PUT or 10 MiB multipart parts, retries, cancel); the server verifies size and file signature on completion. Videos play through a 3-hour presigned URL issued only after the access check; books and images are served through the app (range requests ≤ 4 MiB per response). The bucket stays private. The bucket’s CORS must allow the site origin and expose `ETag`.
 * Database: a `pg` pool of 2 per function instance, `attachDatabasePool` from `@vercel/functions`; set `DATABASE_URL_POOLED` to the Prisma Postgres pooled host.

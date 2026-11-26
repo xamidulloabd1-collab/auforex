@@ -62,7 +62,7 @@ database, so servers sharing one database interfere with each other's sign-ins.
 done by hand and the same test in the next three full runs (local and S3) passed.
 
 **Not tested (no access from the test environment):** a real Cloudflare R2 bucket, a real email provider, the live
-site auforex.vercel.app. Use Super admin → Sozlamalar → Tizim after deploying (docs/RELIZ.md, section 3).
+site auforex.vercel.app. Use Super admin → Sozlamalar → Tizim after deploying (docs/PREVIEW.md, then docs/RELIZ.md section 4).
 
 ---
 
