@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { PasswordInput } from "@/components/auth/password-input";
+import { MAX_SINGLE_REQUEST_IMAGE_BYTES as MAX_IMAGE_BYTES } from "@/lib/constants";
 
 export function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
@@ -40,8 +41,8 @@ export function AvatarForm({ name, image }: { name: string; image: string | null
       toast.error("Faqat PNG, JPG yoki WEBP rasm yuklang");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Rasm hajmi 5 MB dan oshmasin");
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error("Rasm hajmi 4 MB dan oshmasin");
       return;
     }
     setPending(true);
@@ -84,7 +85,7 @@ export function AvatarForm({ name, image }: { name: string; image: string | null
           </Button>
         )}
       </div>
-      <p className="w-full text-xs text-muted-foreground">PNG, JPG yoki WEBP, 5 MB gacha.</p>
+      <p className="w-full text-xs text-muted-foreground">PNG, JPG yoki WEBP, 4 MB gacha.</p>
     </div>
   );
 }

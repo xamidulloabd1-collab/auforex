@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, SaveIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -72,9 +72,7 @@ export function BookForm({
       isPublished: false,
     },
   });
-  const fileKey = form.watch("fileKey");
-  const fileSize = form.watch("fileSize");
-  const coverKey = form.watch("coverKey");
+  const [fileKey, fileSize, coverKey] = useWatch({ control: form.control, name: ["fileKey", "fileSize", "coverKey"] });
 
   async function onPdfSelected(file: File) {
     try {

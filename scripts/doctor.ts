@@ -6,6 +6,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { access, constants, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { checkEnv } from "../lib/env-schema";
+import { parseS3Config } from "../lib/storage/config";
 import { isWeakSecret, localDbPort } from "./lib/env-file.mjs";
 import { describeDbUrl, describeEnv, explainMissing, loadProjectEnv } from "./lib/env-load.mjs";
 import { missingPackages } from "./lib/packages.mjs";
@@ -73,10 +74,10 @@ async function main() {
   if (existsSync(path.join(root, "app", "admin"))) {
     fail("Eski versiyadan qolgan app/admin papkasi bor", "O‘chiring: Remove-Item -Recurse -Force app\\admin  (yoki yangi ZIP’ni bo‘sh papkaga oching).");
   } else ok("Loyiha fayllari (eski versiya qoldiqlari yo‘q)");
-  existsSync(path.join(root, "lib", "db", "generated")) ? ok("Prisma client yaratilgan") : fail("Prisma client yo‘q", "npx prisma generate");
-  existsSync(path.join(root, "public", "pdfjs", "pdf.worker.min.mjs"))
-    ? ok("PDF o‘quvchi (pdf.js worker) joyida")
-    : fail("public/pdfjs/pdf.worker.min.mjs yo‘q — kitoblar ochilmaydi", "node scripts/copy-pdf-worker.mjs");
+  if (existsSync(path.join(root, "lib", "db", "generated"))) ok("Prisma client yaratilgan");
+  else fail("Prisma client yo‘q", "npx prisma generate");
+  if (existsSync(path.join(root, "public", "pdfjs", "pdf.worker.min.mjs"))) ok("PDF o‘quvchi (pdf.js worker) joyida");
+  else fail("public/pdfjs/pdf.worker.min.mjs yo‘q — kitoblar ochilmaydi", "node scripts/copy-pdf-worker.mjs");
 
   const missingPkgs = missingPackages(root);
   if (missingPkgs.length) fail(`O‘rnatilmagan paketlar: ${missingPkgs.join(", ")}`, "npm install  (package.json yangilangan)");
@@ -114,7 +115,14 @@ async function main() {
     warn("BETTER_AUTH_URL va NEXT_PUBLIC_APP_URL har xil", "Ikkalasi bir xil manzil bo‘lishi kerak (masalan http://localhost:3000).");
   } else if (site) ok(`Sayt manzili: ${site}`);
 
-  // 4. Storage
+  // 4. Object storage (R2/S3) and mail: format only here; live checks are separate commands.
+  const s3 = parseS3Config(process.env);
+  if (!s3.ok) fail(`Fayl ombori: ${s3.error}`, "docs/FAYL-SAQLASH.md");
+  else if (s3.config) ok(`Fayl ombori: ${new URL(s3.config.endpoint).host} · bucket “${s3.config.bucket}” — ulanishni tekshirish: npm run storage:check`);
+  if (process.env.SMTP_HOST?.trim() && process.env.MAIL_FROM?.trim()) ok("Pochta (SMTP) sozlangan — tekshirish: npm run mail:check -- --to siz@misol.uz");
+  else warn("Pochta (SMTP) sozlanmagan — ro‘yxatdan o‘tishni tasdiqlash va parol tiklash xatlari yuborilmaydi", "docs/EMAIL.md");
+
+  // 5. Storage folder
   const storageRoot = path.resolve(root, process.env.STORAGE_LOCAL_ROOT || "./storage");
   try {
     await mkdir(storageRoot, { recursive: true });

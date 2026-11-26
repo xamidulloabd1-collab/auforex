@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db/prisma";
 import { checkEnv } from "@/lib/env";
 import { ModelName } from "@/lib/db/generated/internal/prismaNamespaceBrowser";
-import { appUrl } from "@/lib/env";
+import { appUrl, env, isMailConfigured } from "@/lib/env";
+import { emailVerificationRequired } from "@/lib/env-schema";
 import { storageStatus } from "@/lib/storage";
 import { poolSize, usesPooledDatabase } from "@/lib/db/prisma";
 
@@ -50,7 +51,13 @@ function databaseReport() {
 
 function storageReport() {
   const s = storageStatus();
+  // A wrong S3_* value is named (the message never contains keys); uploads stay off until fixed.
+  if (s.error) return { driver: s.driver, uploads: "config_invalid", error: s.error };
   return { driver: s.driver, uploads: s.uploads ? "ok" : "not_configured" };
+}
+
+function mailReport() {
+  return { configured: isMailConfigured(), verificationRequired: emailVerificationRequired(env(), isMailConfigured()) };
 }
 
 /**
@@ -93,7 +100,7 @@ export async function GET(request: Request) {
         { status: 503, headers },
       );
     }
-    return Response.json({ status: "ok", migrationsApplied, site: siteReport(request), database: databaseReport(), storage: storageReport() }, { headers });
+    return Response.json({ status: "ok", migrationsApplied, site: siteReport(request), database: databaseReport(), storage: storageReport(), mail: mailReport() }, { headers });
   } catch (err) {
     console.error("[health] database check failed", err);
     return Response.json(

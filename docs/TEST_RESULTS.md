@@ -1,3 +1,71 @@
+# Test results — 26 November 2026 (final stabilization, branch `claude/final-stabilization`, base `9a5fcdc`)
+
+Environment: Linux, Node 22.23, PostgreSQL 16, Chromium (Playwright 1.65), production build (`next build` + `next start`).
+Every E2E mode ran on its **own freshly created database** (migrations + seed) — auth rate limits are stored in the
+database, so servers sharing one database interfere with each other's sign-ins.
+
+| Mode | Server settings | External services |
+|---|---|---|
+| Local disk | `REQUIRE_EMAIL_VERIFICATION=false` | — |
+| Vercel mode | `VERCEL=1` (read-only disk rules, 4 MiB response cap, pool 2), `STORAGE_DRIVER=s3` | S3 emulator (`moto_server`) with the exact CORS rule from `docs/FAYL-SAQLASH.md` (only the site origin, `GET/PUT/HEAD`, `Content-Type`/`Range`, `ExposeHeaders: ETag`); a foreign origin gets 403 |
+| Real SMTP | SMTP_* set, verification on (production default) | local SMTP server (`aiosmtpd`) with AUTH, every message saved as `.eml` and parsed by the test |
+
+## Summary
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ 0 errors |
+| `npm run lint` | ✅ 0 errors, **0 warnings** (was 5) |
+| Unit tests | ✅ **103 / 103** (21 new: R2/S3 settings parser, S3 client retries/timeouts/re-signing, live storage check against a fake bucket, SMTP TLS default, mail error classification, redirect quirks) |
+| `npm run build` | ✅ |
+| E2E, local disk | ✅ **35 / 35** (+4 email tests skipped in this mode) |
+| E2E, Vercel mode + S3 bucket | ✅ **35 / 35**; bucket afterwards: **0 unfinished multipart uploads** |
+| E2E, real SMTP | ✅ **4 / 4**: sign-up → verification email → link → verified and signed in; unverified sign-in refused with resend; forged token rejected; password reset (link single-use, old password refused, **other device signed out**, unknown address gets the same answer and no email); email change → verification to the new address |
+| SMTP unreachable (port closed) | ✅ sign-up still creates the account, “send verification” answers **503 `MAIL_SEND_FAILED`** in 0.5 s with a clear message; password reset still answers “sent” (no account enumeration) and the server log names the cause: `[mail] … yuborilmadi: Pochta serveriga ulanib bo‘lmadi (ESOCKET) …` |
+| `npm run storage:check` against the emulator | ✅ all 5 steps; wrong origin → CORS step ✗ with the rule to add; ETag not exposed → ETag step ✗; `r2.dev` endpoint → refused with the fix |
+| `npm run mail:check` | ✅ connect+login and test email; wrong password → “SMTP login yoki parol qabul qilinmadi”; closed port → connection error naming SMTP_HOST/PORT/SECURE; port 465 with empty `SMTP_SECURE` now uses TLS |
+| Database connections (Vercel mode) | ✅ 80 concurrent page/API requests → 80 × 200; at most **2** connections from the app |
+| Phone layout of the new Super admin → Tizim tab | ✅ no horizontal scroll (iPhone 13 and 1280 px) |
+| Server logs during all runs | ✅ no unexpected errors (only the deliberate foreign-origin sign-in attempt) |
+
+## Found and fixed
+
+| Problem | Effect before | Fix |
+|---|---|---|
+| `SMTP_SECURE` empty was read as `false` | Port 465 without `SMTP_SECURE=true` tried STARTTLS on a TLS port → every email hung, then failed | Empty = not set → 465 uses TLS, 587 STARTTLS |
+| No SMTP timeouts | A silent mail server held a sign-up/reset request for minutes (a Vercel function until its limit) | 10 s connect / 10 s greeting / 20 s socket |
+| Mail failure → generic 500 | “Serverda vaqtinchalik xatolik”, nothing useful in the log | `MAIL_SEND_FAILED` (503) with a clear message; log line with the classified cause, never the link |
+| `S3_ENDPOINT` accepted only `*.r2.cloudflarestorage.com` and threw from every storage call | AWS S3 / B2 / any S3 emulator impossible (so the Vercel-mode E2E could not run at `9a5fcdc`); a wrong value made `/api/health` report **“database_unavailable”** | Parser accepts R2 and S3-compatible hosts, explains r2.dev/http/path/bucket mistakes, accepts the bucket pasted at the end; health reports `storage.uploads: "config_invalid"` with the reason |
+| No timeouts/retries on S3 requests | A hung R2 connection blocked the function; one transient 5xx failed an upload/read | 20 s header timeout, 3 attempts for idempotent requests (re-signed), POST sent once |
+| Multipart parts uploaded one by one; a stalled XHR waited forever | Slow large uploads; frozen upload on a dropped connection | 4 parts in parallel, 60 s stall watchdog → retry; first final failure stops the other parts and aborts the bucket upload |
+| E2E check “preflight seen” counted only `*.r2.cloudflarestorage.com` OPTIONS events | Chromium never reports preflights as page events → the assertion could not pass in any S3 mode | The test sends the browser’s preflight itself: site origin allowed, foreign origin refused |
+| `/verify-email` said “Email tasdiqlandi” when opened directly | Misleading for unverified users | Shows the account's real state |
+| Change-email mail failure | Generic error | Old email restored, clear message |
+| Avatar removal left the file in storage | Storage leak | File deleted |
+| “PRO bekor qilish” on a FREE user | Status set to `PRO_CANCELLED` for a user who never had PRO | Refused with a message |
+| Avatar / challenge image limit 5 MB in the browser | 4.5–5 MB images failed on Vercel (4.5 MB request cap) with an unclear error | 4 MB in the browser, same as the server on Vercel |
+| `?next=/\t/evil.com` | Browsers strip tabs → `//evil.com` | Control characters and backslashes refused, origin re-checked |
+| Lesson page: 4 sequential DB queries | Extra latency per page view | Run in parallel |
+| 5 ESLint warnings (React Compiler skipped forms using `form.watch`) | Forms not memoized | `useWatch` |
+| Test fixtures | Not reproducible | `npm run e2e:media` creates them (2-page PDF, ~14 MB video = exactly 2 parts) |
+
+## New
+
+- **Super admin → Sozlamalar → Tizim**: configuration summary (no secrets), “Omborni tekshirish” (live R2 check),
+  “Menga test xat yuborish”. Covered by E2E in both storage modes.
+- `npm run storage:check`, `npm run mail:check`, `npm run e2e:media`; `npm run doctor` validates the R2 address and SMTP.
+- `/api/health` reports `mail: {configured, verificationRequired}`.
+- Docs: `docs/EMAIL.md`, `docs/RELIZ.md` (release and deployment steps, rollback), updates to `FAYL-SAQLASH.md`, `VERCEL.md`, README.
+
+**Observed once, not reproduced:** in one intermediate local-disk run “founder portrait: upload …” did not see
+“Portret yuklangan” within 30 s (the screenshot was lost when the next run cleaned `test-results`). The same upload
+done by hand and the same test in the next three full runs (local and S3) passed.
+
+**Not tested (no access from the test environment):** a real Cloudflare R2 bucket, a real email provider, the live
+site auforex.vercel.app. Use Super admin → Sozlamalar → Tizim after deploying (docs/RELIZ.md, section 3).
+
+---
+
 # Test results — 23 November 2026, round 2 (local sign-in 503, database timeouts, missing package)
 
 The three reported errors were reproduced on a `next dev` server **before** changing code, then re-tested after the fix.

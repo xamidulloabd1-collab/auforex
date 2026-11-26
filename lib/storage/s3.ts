@@ -138,6 +138,11 @@ export class S3Error extends Error {
   }
 }
 
+/** Time allowed until the bucket answers (headers), per attempt. */
+export const S3_TIMEOUT_MS = 20_000;
+const S3_ATTEMPTS = 3;
+const pause = (attempt: number) => new Promise((r) => setTimeout(r, 250 * 2 ** (attempt - 1)));
+
 const xmlValue = (xml: string, tag: string) => xml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`))?.[1] ?? null;
 const xmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -148,16 +153,47 @@ export class S3Client {
     return `${this.config.endpoint.replace(/\/$/, "")}/${uriEncode(this.config.bucket)}/${uriEncode(key, true)}`;
   }
 
+  /**
+   * Signed request. The response headers must arrive within `S3_TIMEOUT_MS` (a hung bucket
+   * connection would otherwise hold a serverless function until its time limit); streaming the
+   * body afterwards is not limited. Idempotent requests (GET/HEAD/PUT/DELETE) are retried on
+   * network errors, timeouts and 5xx answers; POST (create/complete multipart) is sent once.
+   */
   private async send(method: string, url: string, opts: { headers?: Record<string, string>; body?: string | Uint8Array } = {}) {
     const body = opts.body;
     const payloadHash = body === undefined ? sha256Hex("") : sha256Hex(body);
-    const headers = signHeaders(this.config, method, url, { headers: opts.headers, payloadHash });
-    const res = await fetch(url, { method, headers, body: body as BodyInit | undefined, cache: "no-store" });
-    if (!res.ok && res.status !== 206) {
+    const attempts = method === "POST" ? 1 : S3_ATTEMPTS;
+    for (let attempt = 1; ; attempt++) {
+      // Signed per attempt: the signature carries the request time.
+      const headers = signHeaders(this.config, method, url, { headers: opts.headers, payloadHash });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), S3_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(url, { method, headers, body: body as BodyInit | undefined, cache: "no-store", signal: controller.signal });
+      } catch (err) {
+        clearTimeout(timer);
+        if (attempt < attempts) {
+          await pause(attempt);
+          continue;
+        }
+        const timedOut = controller.signal.aborted;
+        throw new S3Error(
+          timedOut ? 504 : 503,
+          timedOut ? "Timeout" : "NetworkError",
+          timedOut ? `S3 ${method}: ${S3_TIMEOUT_MS / 1000} s ichida javob kelmadi` : `S3 ${method}: ulanib bo‘lmadi (${(err as Error)?.message ?? err})`,
+        );
+      }
+      clearTimeout(timer);
+      if (res.ok || res.status === 206) return res;
+      if (res.status >= 500 && attempt < attempts) {
+        await res.body?.cancel().catch(() => {});
+        await pause(attempt);
+        continue;
+      }
       const text = method === "HEAD" ? "" : await res.text().catch(() => "");
       throw new S3Error(res.status, xmlValue(text, "Code") ?? String(res.status), xmlValue(text, "Message") ?? `S3 ${method} ${res.status}`);
     }
-    return res;
   }
 
   async head(key: string): Promise<{ size: number; contentType: string | null } | null> {

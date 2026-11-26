@@ -56,6 +56,7 @@ export async function revokePro(userId: string): Promise<ActionResult> {
     idSchema.parse(userId);
     const sub = await prisma.subscription.findUnique({ where: { userId }, select: { status: true, user: { select: { email: true } } } });
     if (!sub) throw new UserFacingError("Obuna topilmadi");
+    if (sub.status !== "PRO_ACTIVE") throw new UserFacingError("Bu foydalanuvchida faol PRO obuna yo‘q");
     await prisma.subscription.update({ where: { userId }, data: { status: "PRO_CANCELLED", cancelledAt: new Date() } });
     await audit({ actorId: admin.id, action: "subscription.revoke", targetType: "User", targetId: userId, summary: `${sub.user.email}: PRO bekor qilindi` });
     revalidatePath(`/super-admin/users/${userId}`);

@@ -109,14 +109,8 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("lesson-level").selectOption("INTERMEDIATE");
     await expect(page.getByTestId("lesson-heading-preview")).toContainText(`${CATEGORY} — 5-dars`);
     const uploads: string[] = [];
-    const preflightStatuses: number[] = [];
     page.on("request", (r) => {
       if (r.method() === "PUT") uploads.push(r.url());
-    });
-    page.on("response", (response) => {
-      if (response.request().method() === "OPTIONS" && new URL(response.url()).hostname.endsWith(".r2.cloudflarestorage.com")) {
-        preflightStatuses.push(response.status());
-      }
     });
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/big.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 90_000 });
@@ -155,8 +149,22 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/small.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 30_000 });
     if (S3) {
-      expect(preflightStatuses.length).toBeGreaterThan(0);
-      expect(preflightStatuses.every((status) => status >= 200 && status < 300)).toBe(true);
+      // Chromium does not report CORS preflights as page events, so send the same preflight the
+      // browser sends before a direct upload: the bucket must allow this site, PUT and Content-Type.
+      const site = new URL(page.url()).origin;
+      const target = uploads.find((u) => !u.includes("/api/admin/upload"))!;
+      const allowed = await page.request.fetch(target, {
+        method: "OPTIONS",
+        headers: { Origin: site, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type" },
+      });
+      expect(allowed.status()).toBeLessThan(300);
+      expect(allowed.headers()["access-control-allow-origin"]).toBe(site);
+      // Another site is refused by the same rule.
+      const foreign = await page.request.fetch(target, {
+        method: "OPTIONS",
+        headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type" },
+      });
+      expect(foreign.status()).toBeGreaterThanOrEqual(400);
     }
     await page.getByTestId("lesson-publish").click();
     await page.getByTestId("lesson-save").click();
@@ -368,5 +376,25 @@ test.describe.serial("Video LMS", () => {
     await reader.goto("/books");
     await reader.getByTestId("book-card").filter({ hasText: "Trading Noldan" }).getByRole("link", { name: /O‘qish|Davom ettirish/ }).click();
     await expect(reader.getByTestId("pdf-reader").getByText("/ 178").filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("system tab: live storage check (bucket keys, CORS, ETag, multipart) or local disk explained", async () => {
+    const page = await admin.newPage();
+    await page.goto("/super-admin/settings");
+    await page.getByRole("tab", { name: "Tizim" }).click();
+    const status = page.getByTestId("system-status");
+    await expect(status).toBeVisible();
+    // Keys and passwords are never shown.
+    await expect(status).not.toContainText("testsecret");
+    if (S3) {
+      await expect(status).toContainText("R2/S3");
+      await page.getByTestId("check-storage").click();
+      await expect(page.getByText("Fayl ombori to‘g‘ri sozlangan")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("storage-check-report").locator("li")).toHaveCount(5);
+    } else {
+      await expect(status).toContainText("server diski");
+      await expect(page.getByTestId("check-storage")).toBeDisabled();
+    }
+    await page.close();
   });
 });

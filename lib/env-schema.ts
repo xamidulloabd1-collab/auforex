@@ -4,10 +4,11 @@
  */
 import { z } from "zod";
 
+/** "true"/"1" → true, "false"/"0" → false, not set → undefined (so a default can apply). */
 const boolish = z
   .enum(["true", "false", "1", "0", ""])
   .optional()
-  .transform((v) => v === "true" || v === "1");
+  .transform((v) => (v === undefined || v === "" ? undefined : v === "true" || v === "1"));
 
 export const serverEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

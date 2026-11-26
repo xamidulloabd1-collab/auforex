@@ -5,6 +5,7 @@ import path from "node:path";
 import { env } from "@/lib/env";
 import { detectFileType, UPLOAD_KINDS, type DetectedFile, type UploadKind } from "./file-types";
 import { isBundledKey, isValidStorageKey, newStorageKey, type StorageArea } from "./keys";
+import { parseS3Config } from "./config";
 import { S3Client, type S3Config } from "./s3";
 
 /**
@@ -318,62 +319,12 @@ function withBundled(inner: StorageDriver): StorageDriver {
 
 /* ------------------------------------------------------------------ selection */
 
-
-export function s3ConfigFromEnv(
-  source: Record<string, string | undefined> = process.env,
-): S3Config | null {
-  const {
-    S3_ENDPOINT,
-    S3_BUCKET,
-    S3_ACCESS_KEY_ID,
-    S3_SECRET_ACCESS_KEY,
-  } = source;
-
-  const endpoint = S3_ENDPOINT?.trim();
-  const bucket = S3_BUCKET?.trim();
-  const accessKeyId = S3_ACCESS_KEY_ID?.trim();
-  const secretAccessKey = S3_SECRET_ACCESS_KEY?.trim();
-
-  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
-    return null;
-  }
-
-  let url: URL;
-
-  try {
-    url = new URL(endpoint);
-  } catch {
-    throw new Error("[storage] S3_ENDPOINT URL formati noto‘g‘ri");
-  }
-
-  if (
-    url.protocol !== "https:" ||
-    !url.hostname.endsWith(".r2.cloudflarestorage.com") ||
-    url.pathname !== "/" ||
-    url.search ||
-    url.hash ||
-    url.username ||
-    url.password ||
-    url.port
-  ) {
-    throw new Error(
-      "[storage] S3_ENDPOINT Cloudflare R2 S3 API manzili bo‘lishi kerak",
-    );
-  }
-
-  if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(bucket)) {
-    throw new Error("[storage] S3_BUCKET nomi noto‘g‘ri");
-  }
-
-  return {
-    endpoint: url.origin,
-    bucket,
-    accessKeyId,
-    secretAccessKey,
-    region: source.S3_REGION?.trim() || "auto",
-  };
+/** S3_* settings as a client config; throws a clear 503 when they are present but wrong. */
+export function s3ConfigFromEnv(source: Record<string, string | undefined> = process.env): S3Config | null {
+  const parsed = parseS3Config(source);
+  if (!parsed.ok) throw new UploadError(`Fayl ombori sozlamasi noto‘g‘ri: ${parsed.error}`, 503);
+  return parsed.config;
 }
-
 
 /** Vercel runs the app from a read-only file system: files can only be kept in object storage. */
 export function isReadOnlyHost() {
@@ -400,9 +351,14 @@ export function resetStorageForTests() {
   driver = null;
 }
 
-export function storageStatus() {
-  const s = getStorage();
-  return { driver: s.name, uploads: s.writable };
+/** Driver and whether uploads work; a configuration error is reported instead of thrown. */
+export function storageStatus(): { driver: "local" | "s3"; uploads: boolean; error?: string } {
+  try {
+    const s = getStorage();
+    return { driver: s.name, uploads: s.writable };
+  } catch (err) {
+    return { driver: "s3", uploads: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export const STORAGE_NOT_CONFIGURED =

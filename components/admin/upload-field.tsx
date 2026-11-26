@@ -28,18 +28,50 @@ async function postJson<T>(body: unknown): Promise<T> {
   return json;
 }
 
+/** Parts sent at the same time in a multipart upload. */
+const PARALLEL_PARTS = 4;
+/** A request that sends no bytes for this long is treated as a dropped connection and retried. */
+const STALL_MS = 60_000;
+
 /** One XHR PUT with progress; resolves with the response (ETag header for multipart parts). */
 function put(url: string, body: Blob, headers: Record<string, string>, onBytes: (n: number) => void, signal?: AbortSignal) {
   return new Promise<{ status: number; etag: string | null; text: string }>((resolve, reject) => {
     if (signal?.aborted) return reject(new UploadCancelled());
     const xhr = new XMLHttpRequest();
+    let stalled = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const arm = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        stalled = true;
+        xhr.abort();
+      }, STALL_MS);
+    };
+    const onAbort = () => xhr.abort();
+    const done = () => {
+      clearTimeout(watchdog);
+      signal?.removeEventListener("abort", onAbort);
+    };
     xhr.open("PUT", url);
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
-    xhr.upload.onprogress = (e) => onBytes(e.loaded);
-    xhr.onload = () => resolve({ status: xhr.status, etag: xhr.getResponseHeader("ETag"), text: xhr.responseText });
-    xhr.onerror = () => reject(new Error("Tarmoq yoki CORS xatosi — R2 CORS’da sayt manzili, PUT va Content-Type’ni tekshiring"));
-    xhr.onabort = () => reject(new UploadCancelled());
-    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.upload.onprogress = (e) => {
+      arm();
+      onBytes(e.loaded);
+    };
+    xhr.onload = () => {
+      done();
+      resolve({ status: xhr.status, etag: xhr.getResponseHeader("ETag"), text: xhr.responseText });
+    };
+    xhr.onerror = () => {
+      done();
+      reject(new Error("Tarmoq yoki CORS xatosi — R2 CORS’da sayt manzili, PUT va Content-Type’ni tekshiring"));
+    };
+    xhr.onabort = () => {
+      done();
+      reject(stalled ? new Error("Ulanish uzilib qoldi — qayta urinilmoqda") : new UploadCancelled());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    arm();
     xhr.send(body);
   });
 }
@@ -103,27 +135,55 @@ export async function uploadFile(kind: UploadKind, file: File | Blob, onProgress
   if (plan.mode === "proxy") return proxyUpload(kind, file, onProgress, signal);
 
   const report = (sent: number) => onProgress?.(Math.min(99, Math.round((sent / file.size) * 100)));
+  // Stops the other parts as soon as one fails for good (or "Bekor qilish" is pressed).
+  const stop = new AbortController();
+  const onCancel = () => stop.abort();
+  signal?.addEventListener("abort", onCancel, { once: true });
   try {
     let etags: string[] | undefined;
     if (plan.mode === "single") {
-      await withRetries(() => put(plan.url, file, { "Content-Type": plan.contentType }, report, signal), signal);
+      await withRetries(() => put(plan.url, file, { "Content-Type": plan.contentType }, report, stop.signal), stop.signal);
     } else {
-      etags = [];
-      let done = 0;
-      for (const [i, url] of plan.urls.entries()) {
-        const part = file.slice(i * plan.partSize, Math.min(file.size, (i + 1) * plan.partSize));
-        const r = await withRetries(() => put(url, part, {}, (n) => report(done + n), signal), signal);
-        if (!r.etag) throw new Error("Ombor ETag qaytarmadi — bucket CORS’da ExposeHeaders: [\"ETag\"] kerak");
-        etags.push(r.etag);
-        done += part.size;
+      const parts = plan.urls.length;
+      const list: string[] = new Array(parts);
+      const sent = new Array<number>(parts).fill(0);
+      const total = () => sent.reduce((a, b) => a + b, 0);
+      let next = 0;
+      // A few parts at a time: much faster than one by one, still gentle on a home connection.
+      const worker = async () => {
+        while (next < parts) {
+          const i = next++;
+          const part = file.slice(i * plan.partSize, Math.min(file.size, (i + 1) * plan.partSize));
+          const r = await withRetries(
+            () =>
+              put(plan.urls[i]!, part, {}, (n) => {
+                sent[i] = n;
+                report(total());
+              }, stop.signal),
+            stop.signal,
+          );
+          if (!r.etag) throw new Error("Ombor ETag qaytarmadi — bucket CORS’da ExposeHeaders: [\"ETag\"] kerak");
+          list[i] = r.etag;
+          sent[i] = part.size;
+          report(total());
+        }
+      };
+      try {
+        await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, parts) }, worker));
+      } catch (err) {
+        stop.abort();
+        throw err;
       }
+      etags = list;
     }
     const stored = await postJson<UploadedFile>({ action: "complete", token: plan.token, etags });
     onProgress?.(100);
     return stored;
   } catch (err) {
     await postJson({ action: "abort", token: plan.token }).catch(() => {});
-    throw err;
+    throw signal?.aborted ? new UploadCancelled() : err;
+  } finally {
+    signal?.removeEventListener("abort", onCancel);
   }
 }
 

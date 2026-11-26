@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 import type { z } from "zod";
@@ -20,13 +20,14 @@ export function QuestionsEditor({ challengeId, initial, locked }: { challengeId:
   const form = useForm<Values>({ resolver: zodResolver(questionsSchema), defaultValues: { questions: initial } });
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "questions" });
   const errors = form.formState.errors.questions;
+  const questions = useWatch({ control: form.control, name: "questions" });
 
   return (
     <form onSubmit={form.handleSubmit((v) => run(() => saveQuestions(challengeId, v)))} className="grid gap-4" data-testid="questions-editor">
       {locked && <p className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-amber-200">Topshiriqlar mavjud — adolatli baholash uchun savollar qulflangan.</p>}
       {fields.map((f, qi) => {
-        const options = form.watch(`questions.${qi}.options`) ?? [];
-        const correct = Number(form.watch(`questions.${qi}.correctIndex`));
+        const options = questions?.[qi]?.options ?? [];
+        const correct = Number(questions?.[qi]?.correctIndex);
         const qErr = errors?.[qi];
         return (
           <fieldset key={f.id} disabled={locked} className="card-surface grid gap-3 p-5">

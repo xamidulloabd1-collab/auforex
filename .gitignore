@@ -29,7 +29,7 @@ next-env.d.ts
 *.log
 
 # e2e storage
-/.e2e-storage
+/.e2e-storage*
 
 .vercel
 .env*.local

@@ -7,7 +7,7 @@ trafigi bepul, 10 GB gacha bepul).
 
 | Nima | Qanday yuklanadi | Kim ko‘radi |
 |---|---|---|
-| Video dars | Brauzerdan **to‘g‘ridan-to‘g‘ri** omborga (10 MB bo‘laklab, uzilsa qayta urinadi, bekor qilish mumkin) | Bepul dars — ro‘yxatdan o‘tganlar; PRO dars — PRO va adminlar. Har ko‘rishga **3 soatlik imzoli havola** |
+| Video dars | Brauzerdan **to‘g‘ridan-to‘g‘ri** omborga (10 MB bo‘laklab, bir vaqtda 4 bo‘lak; uzilsa yoki 60 s “qotib” qolsa qayta urinadi, bekor qilish mumkin) | Bepul dars — ro‘yxatdan o‘tganlar; PRO dars — PRO va adminlar. Har ko‘rishga **3 soatlik imzoli havola** |
 | Kitob PDF | To‘g‘ridan-to‘g‘ri omborga | Kitob sozlamasiga ko‘ra; fayl faqat sayt orqali beriladi |
 | Muqova, asoschi rasmi | To‘g‘ridan-to‘g‘ri omborga | Hamma (sayt orqali) |
 | Avatar, topshiriq rasmi | Sayt orqali (4 MB gacha) | Egasi va adminlar |
@@ -95,12 +95,27 @@ Preview env’da `S3_BUCKET` va API kalitlari alohida test bucket/tokeniga tegis
 
 ## 6. Tekshirish
 
-1. `https://auforex.vercel.app/api/health` → `"storage":{"driver":"s3","uploads":"ok"}` bo‘lishi kerak.
+1. **Super admin → Sozlamalar → Tizim → “Omborni tekshirish”**. Sayt joylashgan serverning o‘zidan, haqiqiy kalitlar
+   bilan tekshiradi:
+   - kalitlar va bucket (kichik test fayli yoziladi, o‘qiladi va o‘chiriladi — `_healthcheck/…`);
+   - CORS: sayt manzilidan brauzer yuklashiga ruxsat (`PUT` + `Content-Type`);
+   - CORS: `ETag` sahifaga ko‘rinadimi (katta videolar uchun shart);
+   - bo‘laklab yuklash (multipart) boshlash va bekor qilish.
+
+   Har bir qadam ✓ yoki ✗ va **nimani tuzatish kerakligi** bilan chiqadi.
+2. Xuddi shu tekshiruv kompyuterdan (`.env` dagi S3_* bilan):
+
+   ```bash
+   npm run storage:check -- --origin https://auforex.vercel.app
+   ```
+
+3. `https://auforex.vercel.app/api/health` → `"storage":{"driver":"s3","uploads":"ok"}` bo‘lishi kerak.
    `"driver":"local","uploads":"not_configured"` bo‘lsa — S3_* qiymatlari saqlanmagan yoki Redeploy qilinmagan.
-2. **Super admin → Sozlamalar → Asoschi** → rasm yuklang → **Saqlash** → bosh sahifada rasm ko‘rinsin.
-3. **Super admin → Darslar → Yangi dars** → kichik MP4 yuklang (foiz ko‘rsatkichi 100% ga yetadi, “Video yuklangan”) →
+   `"uploads":"config_invalid"` bo‘lsa — `error` maydonida qaysi qiymat noto‘g‘ri yozilgani aytiladi (kalitlar ko‘rsatilmaydi).
+4. **Super admin → Sozlamalar → Asoschi** → rasm yuklang → **Saqlash** → bosh sahifada rasm ko‘rinsin.
+5. **Super admin → Darslar → Yangi dars** → kichik MP4 yuklang (foiz ko‘rsatkichi 100% ga yetadi, “Video yuklangan”) →
    saqlang → dars sahifasida video o‘ynasin.
-4. Cloudflare’da bucket → **Objects**: `videos/…`, `founder/…` fayllari paydo bo‘lgan bo‘lsin.
+6. Cloudflare’da bucket → **Objects**: `videos/…`, `founder/…` fayllari paydo bo‘lgan bo‘lsin.
 
 ## Muammo bo‘lsa
 
@@ -111,6 +126,9 @@ Preview env’da `S3_BUCKET` va API kalitlari alohida test bucket/tokeniga tegis
 | “Fayl omboriga ulanishda xato (S3 kalitlari noto‘g‘ri …)” | Kalit noto‘g‘ri yoki boshqa bucket’ga berilgan; tokenni qayta yarating va Vercel’da yangilang |
 | “Fayl omboriga ulanishda xato (S3_BUCKET nomi noto‘g‘ri)” | `S3_BUCKET` Cloudflare’dagi nom bilan aynan bir xil bo‘lsin |
 | “Fayl saqlash sozlanmagan …” | S3_* o‘zgaruvchilari kiritilmagan yoki Redeploy qilinmagan |
+| “Fayl ombori sozlamasi noto‘g‘ri: … r2.dev …” | `S3_ENDPOINT` ga bucket’ning ommaviy r2.dev manzili yozilgan. S3 API manzili kerak: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| “Fayl ombori sozlamasi noto‘g‘ri: … yo‘l bo‘lmasin” | `S3_ENDPOINT` oxirida bucket’dan boshqa yo‘l bor. Faqat `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` (oxiridagi `/auforex-media` ham qabul qilinadi) |
+| “… ombor vaqtincha javob bermadi” | R2 20 soniya ichida javob bermadi yoki tarmoq uzildi (sayt 3 marta qayta urinadi). Birozdan so‘ng qayta urining; takrorlansa Cloudflare status sahifasini tekshiring |
 | Kitob ochilmaydi (“Kitob fayli serverda topilmadi”) | Super admin → Kitoblar → **Kitob fayllarini tekshirish → Tekshirish**: dastlabki 3 kitob sayt ichidagi nusxaga qayta ulanadi; qolganlarini qayta yuklang |
 
 Boshqa S3 xizmatlari ham ishlaydi (AWS S3, Backblaze B2, DigitalOcean Spaces): `S3_ENDPOINT` ga ularning endpoint’ini,

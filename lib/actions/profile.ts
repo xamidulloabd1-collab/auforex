@@ -8,6 +8,7 @@ import { assertUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { isMailConfigured } from "@/lib/env";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { deleteStoredFile } from "@/lib/storage";
 import { emailSchema } from "@/lib/validations/auth";
 import { profileSchema, type ProfileInput } from "@/lib/validations/profile";
 import { actionError, UserFacingError, type ActionResult } from "./result";
@@ -36,6 +37,8 @@ export async function removeAvatar(): Promise<ActionResult> {
   try {
     const viewer = await assertUser();
     await prisma.user.update({ where: { id: viewer.id }, data: { image: null } });
+    // The uploaded file is removed as well (best effort), not left behind in storage.
+    if (viewer.image?.startsWith("/api/media/avatars/")) await deleteStoredFile(viewer.image.slice("/api/media/".length));
     revalidatePath("/dashboard", "layout");
     return { ok: true };
   } catch (err) {
@@ -70,8 +73,10 @@ export async function changeEmail(input: z.input<typeof changeEmailSchema>): Pro
     try {
       await getAuth().api.sendVerificationEmail({ body: { email: newEmail, callbackURL: "/verify-email" } });
     } catch (error) {
+      // The mail did not go out: keep the old address so the account is never left unreachable.
       await prisma.user.update({ where: { id: viewer.id }, data: { email: viewer.email, emailVerified: viewer.emailVerified } });
-      throw error;
+      console.error("[profile] change-email verification mail failed", error instanceof Error ? error.message : error);
+      throw new UserFacingError("Tasdiqlash xati yuborilmadi — email o‘zgartirilmadi. Birozdan so‘ng qayta urinib ko‘ring.");
     }
     revalidatePath("/dashboard", "layout");
     return { ok: true, message: "Email o‘zgartirildi. Yangi manzilga tasdiqlash xati yuborildi." };

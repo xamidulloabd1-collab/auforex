@@ -182,6 +182,8 @@ comes from and the database host the site will use — never the values. Details
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:studio` | Prisma migrate dev / deploy, seed, Prisma Studio |
 | `npm run setup` | Create `.env` and generate missing secrets (safe to re-run) |
 | `npm run doctor` | Health check with fixes (Uzbek) |
+| `npm run storage:check -- --origin https://<site>` | Live check of the R2/S3 bucket: keys, read/write/delete, CORS preflight from the site, ETag exposure, multipart start/abort ([docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md)) |
+| `npm run mail:check [-- --to you@example.com]` | SMTP connect + login check, optionally sends a test email ([docs/EMAIL.md](docs/EMAIL.md)) |
 | `npm run deploy:env` | Prints the Railway variables block with freshly generated secrets |
 | `npm run start:prod` | Production start: checks → migrations → seed → `next start` (used by the Docker image) |
 | `npm run db:fix` | Finds and fixes local database problems without deleting data: starts the Docker database, moves it to a free port if another PostgreSQL owns the configured one, aligns the container password with `.env`, creates a missing database, writes the working `DATABASE_URL`/`DB_PORT` |
@@ -191,6 +193,7 @@ comes from and the database host the site will use — never the values. Details
 | `npm run videos:import -- "<folder>" [--yes]` | Bulk-upload a folder of videos to Bunny Stream and create courses/lessons ([docs/VIDEO-DARSLAR.md](docs/VIDEO-DARSLAR.md)) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:e2e` | End-to-end tests (Playwright) against a running server |
+| `npm run e2e:media [folder]` | Creates the media files the E2E suite uploads (default `/tmp/e2emedia`; `big.mp4` needs ffmpeg) |
 
 ---
 
@@ -207,11 +210,15 @@ E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD='…' E2E_FOUNDER_PASSWORD=
 npm run test:e2e
 ```
 
+Media files for the upload tests: `npm run e2e:media` (writes `small.mp4`, `big.mp4`, `founder.png`, a 2-page `book.pdf` to `/tmp/e2emedia`, or set `E2E_MEDIA_DIR`).
+
+Email flows (registration verification, resend, password reset, email change) run only with `E2E_MAILBOX_DIR`: start the server with `SMTP_*` pointing at a test SMTP server that saves each message as an `.eml` file in that folder (e.g. `aiosmtpd`), leave `REQUIRE_EMAIL_VERIFICATION` empty, then `E2E_MAILBOX_DIR=<folder> npx playwright test tests/e2e/email.spec.ts`. The other specs register users without verification, so run them against a server with `REQUIRE_EMAIL_VERIFICATION=false`.
+
 Object-storage mode (behaves like Vercel): start the server with `VERCEL=1` and the `S3_*` variables pointing at a test bucket (any S3 emulator, e.g. `moto_server`, with the CORS policy from `docs/FAYL-SAQLASH.md`), and add `E2E_S3=1` to the test command. Uploads then go browser → bucket and videos are checked through the presigned redirect.
 
 Windows PowerShell: set the variables with `$env:E2E_BASE_URL="http://localhost:3000"` (one line per variable), then `npm run test:e2e`.
 
-The E2E suite signs up two users per run; the sign-up rate limit is 10 per 10 minutes per IP, so on a shared database clear it between repeated runs with `DELETE FROM "RateLimit";`.
+The E2E suite signs up users and signs in many times per run; auth rate limits (15 sign-ins per minute, 10 sign-ups per 10 minutes per IP) are stored in the database. Use a fresh database for each run, and do not point several test servers at the same database at once — or clear the limits between runs with `DELETE FROM "RateLimit";`.
 
 Results of the verification run for this delivery: [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
@@ -335,8 +342,8 @@ tests/              unit (Vitest), e2e (Playwright), fixtures
 | Item | Status / what is needed |
 |---|---|
 | Online payments (Click, Payme…) | Not integrated: payment happens in Telegram and the founder confirms it in the panel. Interface ready for a provider later |
-| SMTP | Code complete and tested against a local SMTP server. Needs real SMTP credentials (e.g. Gmail app password, Mailgun, Resend SMTP) |
-| Cloud object storage | S3-compatible driver implemented (tested against an S3 emulator). Needs a real Cloudflare R2 bucket + `S3_*` variables on Vercel |
+| SMTP | Code complete; verification, resend, password reset and email change pass end-to-end against a real SMTP server (local test server). Needs real SMTP credentials on Vercel ([docs/EMAIL.md](docs/EMAIL.md)); verify with Super admin → Sozlamalar → Tizim → test email |
+| Cloud object storage | S3-compatible driver implemented; direct and multipart uploads, CORS and ETag pass end-to-end against an S3 emulator that enforces CORS. Needs a real Cloudflare R2 bucket + `S3_*` variables on Vercel; verify with Super admin → Sozlamalar → Tizim → “Omborni tekshirish” (or `npm run storage:check`) |
 | Founder data | Profile text and Instagram are filled; **portrait** and optional "Ta’lim falsafasi" still need to be added in Super admin → Founder. The founder's real email should replace the placeholder `founder@auforex.local` |
 | Video lessons | None uploaded (by design). Upload them in Super admin → Darslar (category, lesson number, Free/PRO) or with `npm run videos:import` (Bunny) |
 | Book distribution rights | Confirm rights for the three supplied PDFs (they are published by the seed) |

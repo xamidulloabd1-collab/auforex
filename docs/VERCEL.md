@@ -44,7 +44,7 @@ Fayl hajmi 0 bo‘lmasligi kerak. Qayta tiklash (faqat zarurat bo‘lsa): `pg_re
 | `BETTER_AUTH_SECRET` | 32+ belgili tasodifiy satr: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. **O‘zgartirmang** — o‘zgarsa hamma tizimdan chiqib ketadi |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Fayl ombori — [FAYL-SAQLASH.md](FAYL-SAQLASH.md). Busiz video/kitob/rasm yuklab bo‘lmaydi |
 
-**Production’da email oqimlari uchun majburiy**
+**Production’da email oqimlari uchun majburiy** (provayder tanlash va tekshirish: [EMAIL.md](EMAIL.md))
 
 Ro‘yxatdan o‘tishni email orqali tasdiqlash va parolni tiklash uchun SMTP’ni Vercel’da **Production** va **Preview** muhitlariga alohida sozlang. SMTP yo‘q production’da tasdiqlash talab qilinadi va yangi ro‘yxatdan o‘tish aniq `503 MAIL_NOT_CONFIGURED` xatosi bilan to‘xtaydi; parol tiklash ham xat yubormasdan muvaffaqiyat ko‘rsatmaydi.
 
@@ -52,7 +52,7 @@ Ro‘yxatdan o‘tishni email orqali tasdiqlash va parolni tiklash uchun SMTP’
 |---|---|
 | `SMTP_HOST` | Email provayder bergan SMTP server manzili |
 | `SMTP_PORT` | Provayder porti; odatda `587` (STARTTLS) yoki `465` (TLS) |
-| `SMTP_SECURE` | `587` uchun `false`, `465` uchun `true` |
+| `SMTP_SECURE` | Bo‘sh qoldiring: `465` → TLS, `587` → STARTTLS avtomatik tanlanadi. Provayder boshqacha talab qilsa `true`/`false` |
 | `SMTP_USER` | Provayder SMTP login’i; autentifikatsiya talab qilinmasa bo‘sh |
 | `SMTP_PASSWORD` | SMTP paroli/API kaliti; `SMTP_USER` bilan birga yoki ikkalasi ham bo‘sh |
 | `MAIL_FROM` | Provayderda tasdiqlangan yuboruvchi, masalan `AU Forex Academy <no-reply@auforex.uz>` |
@@ -78,7 +78,7 @@ Provayder boshqaruv panelida yuboruvchi domenni tasdiqlab, ko‘rsatilgan SPF/DK
 | `MIGRATE_ON_BUILD` | `false` — production deploy’da migratsiyani o‘tkazib yuborish; `true` — preview’da ham qo‘llash |
 | `SEED_ON_BUILD` | `true` — deploy’da seed (kategoriyalar, sozlamalar, asoschi akkaunti). Mavjud ma’lumotlarni o‘chirmaydi, lekin odatda kerak emas |
 | `FOUNDER_PASSWORD` | Faqat seed asoschi akkauntini **birinchi marta** yaratganda. Mavjud parolni o‘zgartirmaydi |
-| `MAX_VIDEO_UPLOAD_MB`, `MAX_BOOK_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB` | Yuklash chegaralari (2048 / 100 / 5) |
+| `MAX_VIDEO_UPLOAD_MB`, `MAX_BOOK_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB` | Yuklash chegaralari (2048 / 100 / 5). Avatar va challenge skrinshoti Vercel’da baribir 4 MB gacha (bitta so‘rov chegarasi) |
 
 O‘zgaruvchini qo‘shgach yoki o‘zgartirgach: **Deployments → oxirgi deploy → ⋯ → Redeploy**.
 
@@ -92,15 +92,19 @@ O‘zgaruvchini qo‘shgach yoki o‘zgartirgach: **Deployments → oxirgi deplo
    {"status":"ok","migrationsApplied":4,
     "site":{"url":"https://auforex.vercel.app","https":true,"matchesRequest":true},
     "database":{"pooled":true,"poolMax":2},
-    "storage":{"driver":"s3","uploads":"ok"}}
+    "storage":{"driver":"s3","uploads":"ok"},
+    "mail":{"configured":true,"verificationRequired":true}}
    ```
    - `migrationsApplied` — bazadagi migratsiyalar soni (shu versiyada kamida 4).
    - `database.hint` chiqsa — `DATABASE_URL_POOLED` yoki Prisma Postgres pooler hostini tekshiring.
-   - `storage.uploads: "not_configured"` — S3_* kiritilmagan.
-3. Brauzerda: chiqib, qayta kiring (email va login bilan) → Dashboard ochilsin; telefondan ham.
-4. Super admin → Darslar / Kategoriyalar / Kitoblar ochilsin; kichik video yuklab, saqlab, dars sahifasida ko‘ring.
-5. Kitoblar → biror kitobni oching (PDF sahifalari ko‘rinsin).
-6. Asoschi yoki kitob muqovasi rasmi `/_next/image` orqali optimallashtirilib ochilishini tekshiring.
+   - `storage.uploads: "not_configured"` — S3_* kiritilmagan; `"config_invalid"` — qiymat noto‘g‘ri yozilgan (`error` da sababi).
+   - `mail.configured: false` — SMTP kiritilmagan: ro‘yxatdan o‘tish va parol tiklash ishlamaydi ([EMAIL.md](EMAIL.md)).
+3. **Super admin → Sozlamalar → Tizim**: “Omborni tekshirish” (R2 kalitlari, CORS, ETag, multipart) va
+   “Menga test xat yuborish” (SMTP). Ikkalasi ham ✓ bo‘lishi kerak.
+4. Brauzerda: chiqib, qayta kiring (email va login bilan) → Dashboard ochilsin; telefondan ham.
+5. Super admin → Darslar / Kategoriyalar / Kitoblar ochilsin; kichik video yuklab, saqlab, dars sahifasida ko‘ring.
+6. Kitoblar → biror kitobni oching (PDF sahifalari ko‘rinsin).
+7. Asoschi yoki kitob muqovasi rasmi `/_next/image` orqali optimallashtirilib ochilishini tekshiring.
 
 ## Kirishda xato chiqsa
 

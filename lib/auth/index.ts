@@ -7,10 +7,25 @@ import { username } from "better-auth/plugins";
 import { appUrl, env, isMailConfigured } from "@/lib/env";
 import { emailVerificationRequired, vercelOrigins } from "@/lib/env-schema";
 import { prisma } from "@/lib/db/prisma";
-import { sendMail } from "@/lib/mail";
+import { MailDeliveryError, sendMail } from "@/lib/mail";
 import { passwordResetEmail, verificationEmail } from "@/lib/mail/templates";
 import { nameSchema, passwordSchema } from "@/lib/validations/auth";
 import { devLanOrigin, requestOwnOrigin } from "./origins";
+
+/** A mail that could not be sent becomes a clear 503 for the form instead of a generic 500. */
+async function deliver(mail: Parameters<typeof sendMail>[0]) {
+  try {
+    await sendMail(mail);
+  } catch (err) {
+    if (err instanceof MailDeliveryError) {
+      throw new APIError("SERVICE_UNAVAILABLE", {
+        code: "MAIL_SEND_FAILED",
+        message: "Xat yuborilmadi: pochta xizmati vaqtincha ishlamayapti. Birozdan so‘ng qayta urinib ko‘ring.",
+      });
+    }
+    throw err;
+  }
+}
 
 function firstIssue(result: { success: boolean; error?: { issues: { message: string }[] } }) {
   return result.error?.issues[0]?.message ?? "Ma’lumotlar noto‘g‘ri";
@@ -59,8 +74,9 @@ function createAuth() {
       resetPasswordTokenExpiresIn: 60 * 60,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
-        const mail = passwordResetEmail(user.name, url);
-        await sendMail({ to: user.email, ...mail });
+        // Better Auth logs a failure here and still answers "sent" (it never reveals whether the
+        // address has an account); the reason is in the server log ([mail] …).
+        await deliver({ to: user.email, ...passwordResetEmail(user.name, url) });
       },
     },
 
@@ -69,8 +85,7 @@ function createAuth() {
       autoSignInAfterVerification: true,
       expiresIn: 60 * 60 * 24,
       sendVerificationEmail: async ({ user, url }) => {
-        const mail = verificationEmail(user.name, url);
-        await sendMail({ to: user.email, ...mail });
+        await deliver({ to: user.email, ...verificationEmail(user.name, url) });
       },
     },
 

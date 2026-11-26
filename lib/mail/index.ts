@@ -1,18 +1,15 @@
 import "server-only";
-import nodemailer, { type Transporter } from "nodemailer";
+import type { Transporter } from "nodemailer";
 import { env, isMailConfigured } from "@/lib/env";
+import { classifyMailError, createSmtpTransport, MailDeliveryError } from "./smtp";
+
+export { MailDeliveryError } from "./smtp";
 
 let transporter: Transporter | null = null;
 
 function getTransporter() {
   if (transporter) return transporter;
-  const e = env();
-  transporter = nodemailer.createTransport({
-    host: e.SMTP_HOST,
-    port: e.SMTP_PORT ?? 587,
-    secure: e.SMTP_SECURE ?? (e.SMTP_PORT === 465),
-    auth: e.SMTP_USER ? { user: e.SMTP_USER, pass: e.SMTP_PASSWORD } : undefined,
-  });
+  transporter = createSmtpTransport(env());
   return transporter;
 }
 
@@ -25,8 +22,8 @@ export type MailMessage = {
 
 /**
  * Sends an email via SMTP when configured.
- * Without SMTP: in development the message (including links) is printed to the
- * server console; in production only a warning is logged (links are never logged).
+ * Without SMTP: in development the message (including links) is printed to the server console;
+ * in production it fails with MailDeliveryError (links are never logged).
  */
 export async function sendMail(message: MailMessage): Promise<{ delivered: boolean }> {
   if (!isMailConfigured()) {
@@ -34,18 +31,35 @@ export async function sendMail(message: MailMessage): Promise<{ delivered: boole
       console.info(
         `\n[mail:dev] SMTP sozlanmagan — xat konsolga chiqarildi\nTo: ${message.to}\nSubject: ${message.subject}\n${message.text}\n`,
       );
-    } else {
-      throw new Error("SMTP is not configured; email was not sent.");
+      return { delivered: false };
     }
-    return { delivered: false };
+    throw new MailDeliveryError("Pochta xizmati sozlanmagan (SMTP_HOST, MAIL_FROM)", "not_configured");
   }
 
-  await getTransporter().sendMail({
-    from: env().MAIL_FROM,
-    to: message.to,
-    subject: message.subject,
-    html: message.html,
-    text: message.text,
-  });
+  try {
+    await getTransporter().sendMail({
+      from: env().MAIL_FROM,
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    });
+  } catch (err) {
+    const failure = classifyMailError(err);
+    // Subject and the reason only: the body holds one-time links and is never logged.
+    console.error(`[mail] "${message.subject}" yuborilmadi: ${failure.message}`);
+    throw failure;
+  }
   return { delivered: true };
+}
+
+/** Connects and logs in to the SMTP server without sending anything (Super admin → Tizim). */
+export async function verifyMailTransport(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isMailConfigured()) return { ok: false, error: "Pochta xizmati sozlanmagan (SMTP_HOST, MAIL_FROM)" };
+  try {
+    await getTransporter().verify();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: classifyMailError(err).message };
+  }
 }

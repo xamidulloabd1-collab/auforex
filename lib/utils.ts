@@ -143,5 +143,13 @@ export function pluralizeUz(count: number, noun: string) {
 export function safeRedirectPath(input: string | null | undefined, fallback = "/dashboard") {
   if (!input) return fallback;
   if (!input.startsWith("/") || input.startsWith("//") || input.startsWith("/\\")) return fallback;
+  // Browsers drop tabs/newlines and treat "\" as "/" — "/\t/evil.com" would become "//evil.com".
+  if (/[\u0000-\u001f\u007f\\]/.test(input)) return fallback;
+  try {
+    const base = "http://same-origin.invalid";
+    if (new URL(input, base).origin !== base) return fallback;
+  } catch {
+    return fallback;
+  }
   return input;
 }

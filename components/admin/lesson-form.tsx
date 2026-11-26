@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, SaveIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -80,14 +80,12 @@ export function LessonForm({
       isPublished: false,
     },
   });
-  const source = form.watch("videoSource");
-  const categoryId = form.watch("categoryId");
-  const number = form.watch("order");
-  const title = form.watch("title");
+  // useWatch (not form.watch): subscribes this component to the fields so React Compiler can memoize it.
+  const [source, categoryId, number, title, videoKey, thumbnailKey, duration] = useWatch({
+    control: form.control,
+    name: ["videoSource", "categoryId", "order", "title", "videoKey", "thumbnailKey", "durationSeconds"],
+  });
   const categoryName = categories.find((c) => c.id === categoryId)?.name;
-  const videoKey = form.watch("videoKey");
-  const thumbnailKey = form.watch("thumbnailKey");
-  const duration = form.watch("durationSeconds");
 
   /** Never fail silently: name the first field that blocks saving (also ones without a visible message). */
   function onInvalid(errors: Record<string, { message?: string } | undefined>) {

@@ -89,3 +89,9 @@ export const VIDEO_EMBED_HOSTS = [
 
 /** Lesson difficulty labels (Lesson.level). */
 export const LEVEL_LABELS = { BEGINNER: "Boshlang‘ich", INTERMEDIATE: "O‘rta", ADVANCED: "Yuqori" } as const;
+
+/**
+ * Avatars and challenge screenshots are sent to the app in one request; Vercel accepts at most
+ * 4.5 MB per request body, so the browser stops anything over 4 MB before sending it.
+ */
+export const MAX_SINGLE_REQUEST_IMAGE_BYTES = 4 * 1024 * 1024;
