@@ -40,12 +40,19 @@ Vercel’da bitta branch uchun berilgan qiymat umumiy Preview qiymatidan ustun t
    | `DATABASE_URL` | 1-qadamdagi test manzil | faqat **Preview** | `claude/final-stabilization` |
    | `DATABASE_URL_POOLED` | xuddi shu manzil, host `pooled.db.prisma.io` (Neon/Supabase’da — xuddi shu manzil) | faqat **Preview** | `claude/final-stabilization` |
 
+   | `FOUNDER_PASSWORD` | test bazasidagi `asadbek` uchun yangi parol (12+ belgi, harf va raqam) | faqat **Preview** | `claude/final-stabilization` |
+
    **Sensitive** belgisini yoqing. Mavjud umumiy `DATABASE_URL` yozuviga **tegmang** — u production uchun.
-   `DATABASE_URL_POOLED` ham shart: ilova avval shuni o‘qiydi, bo‘lmasa umumiy (production) qiymat ishlatiladi.
-3. Shu ikkala yozuv paydo bo‘lgach (Claude ularni API orqali tekshiradi), test bazasida jadvallar va boshlang‘ich
-   ma’lumotlar yaratilishi uchun **shu branch’ga** qo‘shiladi:
-   `MIGRATE_ON_BUILD=true`, `SEED_ON_BUILD=true` va test uchun `FOUNDER_PASSWORD` (12+ belgi, harf va raqam).
-   ⚠️ Bularni 2-qadamdan **oldin** qo‘shmang: aks holda seed production bazasida ishlaydi.
+   `DATABASE_URL_POOLED` ham shart: ilova avval shuni o‘qiydi. Ikkalasi turli bazaga qarasa, Preview build to‘xtaydi
+   va sayt bazaga umuman ulanmaydi (kodda himoya bor).
+3. **Izolyatsiyani tekshirish (Claude, Vercel API orqali, faqat o‘qish).** Har bir Preview build’i logida bazaning
+   *barmoq izi* (manzil/parolsiz 12 belgilik xesh) va `prisma migrate status` (faqat o‘qish) chiqadi. Test bazasi
+   ulanganda barmoq izi production’nikidan farq qiladi va migratsiyalar “qo‘llanmagan” bo‘ladi — bu bazaning bo‘sh va
+   alohida ekanini isbotlaydi.
+4. Shundan keyingina, faqat shu branch uchun, `PREVIEW_DB_FINGERPRINT=<test bazasi barmoq izi>`,
+   `MIGRATE_ON_BUILD=true`, `SEED_ON_BUILD=true` qo‘shiladi va Preview qayta deploy qilinadi. Build migratsiya/seed’ni
+   **faqat barmoq izi mos kelsa** bajaradi — boshqa bazaga (masalan production’ga) ulansa, build to‘xtaydi.
+   Seed Vercel’da parolni hech qachon logga chiqarmaydi: `FOUNDER_PASSWORD` siz asoschi hisobi yaratilmaydi.
 
 ## 2. Alohida R2 bucket
 
@@ -76,7 +83,8 @@ Vercel’da bitta branch uchun berilgan qiymat umumiy Preview qiymatidan ustun t
 ## 4. Qayta deploy va tekshirish
 
 1. Vercel → Deployments → shu branch’ning oxirgi deploy’i → **⋯ → Redeploy** (yoki branch’ga yangi commit).
-2. Build logida: `Migratsiyalarni qo‘llash …` va seed qatorlari — bu safar **test bazasida**.
+2. Build logida: `Preview test bazasi tasdiqlangan (fingerprint mos)`, so‘ng `Migratsiyalarni qo‘llash …` va seed
+   qatorlari — **test bazasida**.
 3. Brauzerda (Vercel’ga kirgan holda) `…/api/health`: `status: ok`, `storage.driver: s3`, `uploads: ok`,
    `mail.configured: true`.
 4. `asadbek` + test `FOUNDER_PASSWORD` bilan kiring → **Super admin → Sozlamalar → Tizim**:

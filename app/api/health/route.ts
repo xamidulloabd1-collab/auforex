@@ -29,7 +29,7 @@ function connectionFailure(err: unknown): "timeout" | "auth" | "dns" | "refused"
   if (/password authentication failed|28P01|Authentication failed|P1000/i.test(text)) return "auth";
   if (/ENOTFOUND|EAI_AGAIN/i.test(text)) return "dns";
   if (/ECONNREFUSED/i.test(text)) return "refused";
-  if (/DATABASE_URL is not set/i.test(text)) return "config";
+  if (/DATABASE_URL is not set|Preview: DATABASE_URL/i.test(text)) return "config";
   return "other";
 }
 

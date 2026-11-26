@@ -12,8 +12,15 @@
 // If a step fails the build fails, so Vercel keeps serving the previous working deployment.
 //
 // Overrides: MIGRATE_ON_BUILD=true|false (default: production only), SEED_ON_BUILD=true (default off).
+//
+// Preview safety (a Preview must never change the production database):
+//   - every non-production build prints the database fingerprint and a READ-ONLY `prisma migrate status`;
+//   - DATABASE_URL and DATABASE_URL_POOLED must point at the same database, or the build stops;
+//   - migrations/seed on a Preview run only when PREVIEW_DB_FINGERPRINT equals the fingerprint of
+//     DATABASE_URL — set after checking that this database is the isolated test one (docs/PREVIEW.md).
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { databaseFingerprint, previewDatabaseMismatch } from "./lib/db-identity.mjs";
 
 const root = process.cwd();
 const env = { ...process.env };
@@ -48,8 +55,33 @@ const run = (args, opts = {}) =>
   spawnSync(process.execPath, args, { cwd: root, env, stdio: opts.capture ? "pipe" : "inherit", encoding: "utf8" });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const migrate = flag("MIGRATE_ON_BUILD", target === "production");
+const seed = flag("SEED_ON_BUILD", false);
+
+// Preview database checks (read-only) ------------------------------------------------------------
+if (target !== "production") {
+  const mismatch = previewDatabaseMismatch(env);
+  if (mismatch) die(mismatch);
+  const fingerprint = databaseFingerprint(env.DATABASE_URL);
+  log(`Baza barmoq izi (fingerprint): ${fingerprint ?? "aniqlanmadi"} — manzil va parol chiqarilmaydi`);
+  log("Baza holati (faqat o‘qish, prisma migrate status):");
+  const status = run([prismaCli, "migrate", "status"], { capture: true });
+  const statusText = `${status.stdout ?? ""}${status.stderr ?? ""}`.trim();
+  if (statusText) console.log(statusText.split("\n").map((l) => `    ${l}`).join("\n"));
+  if (target === "preview" && (migrate || seed)) {
+    if (!env.PREVIEW_DB_FINGERPRINT || env.PREVIEW_DB_FINGERPRINT !== fingerprint) {
+      die(
+        "Preview’da migratsiya/seed so‘ralgan, lekin baza tasdiqlanmagan: PREVIEW_DB_FINGERPRINT " +
+          (env.PREVIEW_DB_FINGERPRINT ? "boshqa bazaga tegishli" : "o‘rnatilmagan") +
+          ". Avval shu bazaning alohida test bazasi ekanini tekshiring (docs/PREVIEW.md).",
+      );
+    }
+    log("Preview test bazasi tasdiqlangan (fingerprint mos) — migratsiya/seed shu bazada.");
+  }
+}
+
 // 2. Migrations --------------------------------------------------------------------------------
-if (flag("MIGRATE_ON_BUILD", target === "production")) {
+if (migrate) {
   log("Migratsiya holati (prisma migrate status):");
   const status = run([prismaCli, "migrate", "status"], { capture: true });
   const statusText = `${status.stdout ?? ""}${status.stderr ?? ""}`.trim();
@@ -66,7 +98,7 @@ if (flag("MIGRATE_ON_BUILD", target === "production")) {
 }
 
 // 3. Seed --------------------------------------------------------------------------------------
-if (flag("SEED_ON_BUILD", false)) {
+if (seed) {
   log("Boshlang‘ich ma’lumotlar (seed)…");
   const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
   if (run([tsx, "prisma/seed.ts"]).status !== 0) die("Seed xato bilan tugadi — yuqoridagi xabarni tekshiring.");

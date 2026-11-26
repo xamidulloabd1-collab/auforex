@@ -2,6 +2,7 @@ import "server-only";
 import { attachDatabasePool } from "@vercel/functions";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { previewDatabaseMismatch } from "../../scripts/lib/db-identity.mjs";
 import { PrismaClient } from "./generated/client";
 
 /**
@@ -97,6 +98,12 @@ function createPrismaClient(pool: Pool): Instance {
 }
 
 export function getPrisma(): Instance {
+  // A Preview whose two database variables point at different databases (e.g. a test database
+  // for migrations but the production one for the app) must not connect at all.
+  if (process.env.VERCEL_ENV === "preview") {
+    const mismatch = previewDatabaseMismatch(process.env);
+    if (mismatch) throw new Error(mismatch);
+  }
   const url = runtimeDatabaseUrl();
   if (globalForPrisma.prisma && globalForPrisma.prismaUrl !== url) {
     // The database address changed while the server was running (an .env file edited during
