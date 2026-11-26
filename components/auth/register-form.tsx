@@ -23,11 +23,27 @@ export function RegisterForm() {
   const next = safeRedirectPath(params.get("next"));
   const [error, setError] = React.useState<string | null>(null);
   const [pendingEmail, setPendingEmail] = React.useState<string | null>(null);
+  const [verificationSent, setVerificationSent] = React.useState(false);
+  const [verificationError, setVerificationError] = React.useState<string | null>(null);
+  const [resending, setResending] = React.useState(false);
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
     defaultValues: { name: "", email: "", password: "", confirmPassword: "", acceptTerms: false },
   });
+
+  async function sendVerification(email: string) {
+    setResending(true);
+    setVerificationError(null);
+    const { error: sendError } = await authClient.sendVerificationEmail({ email, callbackURL: "/verify-email" });
+    setResending(false);
+    if (sendError) {
+      setVerificationSent(false);
+      setVerificationError(authErrorMessage(sendError));
+      return;
+    }
+    setVerificationSent(true);
+  }
 
   async function onSubmit(values: RegisterInput) {
     setError(null);
@@ -43,8 +59,8 @@ export function RegisterForm() {
       return;
     }
     if (!data?.token) {
-      // Email verification is required before the first sign-in.
       setPendingEmail(email);
+      await sendVerification(email);
       return;
     }
     toast.success("Hisobingiz yaratildi. Xush kelibsiz!");
@@ -59,9 +75,21 @@ export function RegisterForm() {
           <MailCheckIcon className="size-6 text-success" />
         </div>
         <h2 className="font-display text-xl font-bold">Emailingizni tekshiring</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          <span className="font-medium text-foreground">{pendingEmail}</span> manziliga tasdiqlash havolasi yuborildi. Havolani bosganingizdan so‘ng hisobingiz faollashadi.
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground" role={verificationError ? "alert" : undefined}>
+          {verificationError ? (
+            <>Hisob yaratildi, ammo tasdiqlash xati yuborilmadi: {verificationError}</>
+          ) : verificationSent ? (
+            <>
+              <span className="font-medium text-foreground">{pendingEmail}</span> manziliga tasdiqlash havolasi yuborildi. Havolani bosganingizdan so‘ng hisobingiz faollashadi.
+            </>
+          ) : (
+            <>Tasdiqlash xati yuborilmadi. Qayta urinib ko‘ring.</>
+          )}
         </p>
+        <Button type="button" variant="secondary" className="mt-4 w-full" disabled={resending} onClick={() => sendVerification(pendingEmail)}>
+          {resending ? <Loader2Icon className="animate-spin" /> : <MailCheckIcon />}
+          {verificationSent ? "Tasdiqlash xatini qayta yuborish" : "Tasdiqlash xatini yuborish"}
+        </Button>
         <Button asChild variant="secondary" className="mt-6 w-full">
           <Link href="/login">Kirish sahifasiga o‘tish</Link>
         </Button>

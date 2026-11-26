@@ -21,6 +21,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   INVALID_ORIGIN: "Xavfsizlik tekshiruvi o‘tmadi. Sahifani yangilab, qayta urinib ko‘ring.",
   MISSING_OR_NULL_ORIGIN: "Xavfsizlik tekshiruvi o‘tmadi. Sahifani yangilab, qayta urinib ko‘ring.",
   SERVER_MISCONFIGURED: "Sayt sozlamalarida xatolik bor. Administrator xabardor qilindi.",
+  MAIL_NOT_CONFIGURED: "Pochta xizmati sozlanmagan. Administrator bilan bog‘laning.",
   SERVER_ERROR: "Serverda vaqtinchalik xatolik. Birozdan so‘ng qayta urinib ko‘ring.",
   DATABASE_UNAVAILABLE: "Ma’lumotlar bazasiga ulanib bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
   USERNAME_IS_ALREADY_TAKEN: "Bu login band",

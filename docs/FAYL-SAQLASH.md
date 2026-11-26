@@ -43,7 +43,7 @@ Bucket → **Settings** → **CORS Policy** → **Add CORS policy** (yoki Edit) 
   {
     "AllowedOrigins": ["https://auforex.vercel.app"],
     "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["Content-Type"],
+    "AllowedHeaders": ["Content-Type", "Range"],
     "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
@@ -51,10 +51,25 @@ Bucket → **Settings** → **CORS Policy** → **Add CORS policy** (yoki Edit) 
 ```
 
 - `AllowedOrigins` ichida brauzerda ochiladigan **aniq production origin** bo‘lishi shart (protokol va host, yo‘l yoki yakuniy `/` emas). O‘z domeningiz bo‘lsa, uni ham qo‘shing: `["https://auforex.vercel.app", "https://auforex.uz"]`.
-- Kompyuteringizda sinash uchun `"http://localhost:3000"` ni ham qo‘shish mumkin.
+- Preview uchun Production bucket va kalitlarini ishlatmang. Alohida yopiq Preview bucket hamda faqat shu bucket’ga **Object Read & Write** huquqli alohida token yarating. Preview origin faqat test bucket CORS’ida bo‘lsin. Joriy `fix/platform-stabilization` branch alias’i uchun misol:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://auforex-git-fix-platform-st-5a4a2f-hamidullos-projects-d86a2122.vercel.app"],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedHeaders": ["Content-Type", "Range"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+  Agar Vercel’da branch alias o‘zgargan bo‘lsa, `Deployments` sahifasidagi **Preview** domenining faqat origin qismini kiriting. `localhost` uchun alohida lokal bucket/token ishlating.
 - Brauzer `PUT`dan oldin `OPTIONS` preflight yuboradi: undagi `Access-Control-Request-Method` qiymati `PUT`, so‘raladigan sarlavha esa `Content-Type`. `OPTIONS`ni `AllowedMethods`ga qo‘shmang; qoida `PUT` va `Content-Type`ni ruxsat etishi kerak. Faqat Origin’siz oddiy `OPTIONS` so‘rovi bu preflight’ni tekshirmaydi.
 - `ExposeHeaders: ETag` **shart**: katta video bo‘laklab yuklanadi va sayt har bo‘lakning ETag’ini o‘qiydi.
   Busiz katta video yuklanayotganda “Ombor ETag qaytarmadi — bucket CORS’da ExposeHeaders: ["ETag"] kerak” xatosi chiqadi.
+- CORS brauzerga qaysi origin so‘rov yuborishi mumkinligini belgilaydi; bucket’ni ommaga ochmaydi va token huquqlarini kengaytirmaydi. Production va Preview bucket’larida **Public access o‘chiq** qolsin.
 - Brauzerda xato bo‘lsa, Network panelidagi `OPTIONS` so‘rovining `Origin`, `Access-Control-Request-Method` va `Access-Control-Request-Headers` qiymatlarini tekshiring. Imzoli URL’dagi query parametrlarni (jumladan signature’ni) hech kimga yubormang.
 
 ## 4. Tugallanmagan yuklashlarni tozalash
@@ -65,7 +80,7 @@ multipart uploads** → 1 kun. Sayt bekor qilingan yuklashlarni o‘zi to‘xtat
 
 ## 5. Vercel’ga kiritish
 
-Vercel → loyiha → **Settings → Environment Variables** → har birini **Production** (va xohlasangiz Preview) uchun qo‘shing:
+Vercel → loyiha → **Settings → Environment Variables** → Production qiymatlarini Production’ga qo‘shing. Preview uchun shu nomli o‘zgaruvchilarni **Preview** muhitiga alohida qo‘shib, qiymatlarini Preview test bucket/tokeniga bog‘lang; Production kalitlarini Preview’da qayta ishlatmang:
 
 | Nom | Qiymat |
 |---|---|
@@ -76,7 +91,7 @@ Vercel → loyiha → **Settings → Environment Variables** → har birini **Pr
 | `S3_REGION` | `auto` (R2 uchun; bo‘sh qoldirilsa ham `auto`) |
 
 To‘rttasi birga bo‘lishi kerak — bittasi yetishmasa, sayt ishga tushganda qaysi biri yo‘qligini aytadi.
-Keyin **Deployments** → oxirgi deploy → **⋯ → Redeploy**.
+Preview env’da `S3_BUCKET` va API kalitlari alohida test bucket/tokeniga tegishli bo‘lsin. Keyin tegishli muhitning **Deployments** sahifasidan deploy’ni qayta yarating.
 
 ## 6. Tekshirish
 

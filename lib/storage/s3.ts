@@ -165,7 +165,7 @@ export class S3Client {
       const res = await this.send("HEAD", this.objectUrl(key));
       return { size: Number(res.headers.get("content-length") ?? 0), contentType: res.headers.get("content-type") };
     } catch (err) {
-      if (err instanceof S3Error && (err.status === 404 || err.status === 403)) return null;
+      if (err instanceof S3Error && err.status === 404) return null;
       throw err;
     }
   }

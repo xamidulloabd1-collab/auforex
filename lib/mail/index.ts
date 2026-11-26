@@ -35,7 +35,7 @@ export async function sendMail(message: MailMessage): Promise<{ delivered: boole
         `\n[mail:dev] SMTP sozlanmagan — xat konsolga chiqarildi\nTo: ${message.to}\nSubject: ${message.subject}\n${message.text}\n`,
       );
     } else {
-      console.warn(`[mail] SMTP is not configured; email "${message.subject}" was not sent.`);
+      throw new Error("SMTP is not configured; email was not sent.");
     }
     return { delivered: false };
   }

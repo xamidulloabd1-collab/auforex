@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { presignUrl, signHeaders, uriEncode } from "@/lib/storage/s3";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { presignUrl, S3Client, signHeaders, uriEncode } from "@/lib/storage/s3";
 
 /**
  * Reference examples from the AWS documentation ("Signature Version 4 — examples"):
@@ -13,6 +13,8 @@ const config = {
 const now = new Date("2013-05-24T00:00:00Z");
 const EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const sig = (authorization: string) => authorization.match(/Signature=([0-9a-f]{64})/)?.[1];
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("AWS Signature V4", () => {
   it("GET object with a Range header", () => {
@@ -73,5 +75,27 @@ describe("AWS Signature V4", () => {
   it("encodes like SigV4 expects", () => {
     expect(uriEncode("a b/c~d*é", true)).toBe("a%20b/c~d%2A%C3%A9");
     expect(uriEncode("a/b")).toBe("a%2Fb");
+  });
+
+  it("does not mistake an S3 permission failure for a missing object", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    const client = new S3Client({
+      ...config,
+      endpoint: "https://account.r2.cloudflarestorage.com",
+      bucket: "private-media",
+    });
+
+    await expect(client.head("founder/portrait.png")).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("returns null only when S3 confirms that the object is missing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+    const client = new S3Client({
+      ...config,
+      endpoint: "https://account.r2.cloudflarestorage.com",
+      bucket: "private-media",
+    });
+
+    await expect(client.head("founder/portrait.png")).resolves.toBeNull();
   });
 });

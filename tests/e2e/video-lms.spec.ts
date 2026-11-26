@@ -140,7 +140,11 @@ test.describe.serial("Video LMS", () => {
     await expect(page.getByText("5-dars allaqachon bor")).toBeVisible();
 
     // A text file named .mp4 is rejected by its content.
-    await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/fake.mp4`);
+    await page.getByTestId("video-upload").setInputFiles({
+      name: "fake.mp4",
+      mimeType: "video/mp4",
+      buffer: Buffer.from("not a valid MP4 file"),
+    });
     await expect(page.getByText(/mos emas|qo‘llab-quvvatlanmaydi/)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Video yuklangan")).toHaveCount(0);
 

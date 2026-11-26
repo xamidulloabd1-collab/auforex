@@ -44,6 +44,22 @@ Fayl hajmi 0 bo‘lmasligi kerak. Qayta tiklash (faqat zarurat bo‘lsa): `pg_re
 | `BETTER_AUTH_SECRET` | 32+ belgili tasodifiy satr: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. **O‘zgartirmang** — o‘zgarsa hamma tizimdan chiqib ketadi |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Fayl ombori — [FAYL-SAQLASH.md](FAYL-SAQLASH.md). Busiz video/kitob/rasm yuklab bo‘lmaydi |
 
+**Production’da email oqimlari uchun majburiy**
+
+Ro‘yxatdan o‘tishni email orqali tasdiqlash va parolni tiklash uchun SMTP’ni Vercel’da **Production** va **Preview** muhitlariga alohida sozlang. SMTP yo‘q production’da tasdiqlash talab qilinadi va yangi ro‘yxatdan o‘tish aniq `503 MAIL_NOT_CONFIGURED` xatosi bilan to‘xtaydi; parol tiklash ham xat yubormasdan muvaffaqiyat ko‘rsatmaydi.
+
+| Nom | Qiymat |
+|---|---|
+| `SMTP_HOST` | Email provayder bergan SMTP server manzili |
+| `SMTP_PORT` | Provayder porti; odatda `587` (STARTTLS) yoki `465` (TLS) |
+| `SMTP_SECURE` | `587` uchun `false`, `465` uchun `true` |
+| `SMTP_USER` | Provayder SMTP login’i; autentifikatsiya talab qilinmasa bo‘sh |
+| `SMTP_PASSWORD` | SMTP paroli/API kaliti; `SMTP_USER` bilan birga yoki ikkalasi ham bo‘sh |
+| `MAIL_FROM` | Provayderda tasdiqlangan yuboruvchi, masalan `AU Forex Academy <no-reply@auforex.uz>` |
+| `REQUIRE_EMAIL_VERIFICATION` | Tavsiya: bo‘sh qoldiring (SMTP mavjud bo‘lsa yoqiladi, Production’da esa standart holatda talab qilinadi). Faqat tasdiqlashni ongli ravishda o‘chirish uchun `false` |
+
+Provayder boshqaruv panelida yuboruvchi domenni tasdiqlab, ko‘rsatilgan SPF/DKIM DNS yozuvlarini qo‘shing. Preview’da faqat o‘zingiz boshqaradigan test mailbox manziliga yuborishni sinang; haqiqiy foydalanuvchilarga sinov xati yubormang. Parol/API kalitini chatga, Git’ga yoki `.env.example` fayliga kiritmang. SMTP sozlamalarini qo‘shish yoki o‘zgartirish Vercel Production muhitini o‘zgartiradi; avval ruxsat oling, so‘ng redeploy qiling.
+
 **Tavsiya etiladi**
 
 | Nom | Qiymat |
@@ -62,7 +78,6 @@ Fayl hajmi 0 bo‘lmasligi kerak. Qayta tiklash (faqat zarurat bo‘lsa): `pg_re
 | `MIGRATE_ON_BUILD` | `false` — production deploy’da migratsiyani o‘tkazib yuborish; `true` — preview’da ham qo‘llash |
 | `SEED_ON_BUILD` | `true` — deploy’da seed (kategoriyalar, sozlamalar, asoschi akkaunti). Mavjud ma’lumotlarni o‘chirmaydi, lekin odatda kerak emas |
 | `FOUNDER_PASSWORD` | Faqat seed asoschi akkauntini **birinchi marta** yaratganda. Mavjud parolni o‘zgartirmaydi |
-| `SMTP_*`, `MAIL_FROM` | Parolni tiklash xatlari uchun |
 | `MAX_VIDEO_UPLOAD_MB`, `MAX_BOOK_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB` | Yuklash chegaralari (2048 / 100 / 5) |
 
 O‘zgaruvchini qo‘shgach yoki o‘zgartirgach: **Deployments → oxirgi deploy → ⋯ → Redeploy**.

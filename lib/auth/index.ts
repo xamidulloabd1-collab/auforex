@@ -5,7 +5,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { username } from "better-auth/plugins";
 import { appUrl, env, isMailConfigured } from "@/lib/env";
-import { vercelOrigins } from "@/lib/env-schema";
+import { emailVerificationRequired, vercelOrigins } from "@/lib/env-schema";
 import { prisma } from "@/lib/db/prisma";
 import { sendMail } from "@/lib/mail";
 import { passwordResetEmail, verificationEmail } from "@/lib/mail/templates";
@@ -20,7 +20,7 @@ function createAuth() {
   const e = env();
   const baseURL = appUrl();
   const mailReady = isMailConfigured();
-  const requireEmailVerification = mailReady && e.REQUIRE_EMAIL_VERIFICATION !== "false";
+  const requireEmailVerification = emailVerificationRequired(e, mailReady);
   const extraOrigins = (e.TRUSTED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
@@ -65,7 +65,7 @@ function createAuth() {
     },
 
     emailVerification: {
-      sendOnSignUp: mailReady,
+      sendOnSignUp: false,
       autoSignInAfterVerification: true,
       expiresIn: 60 * 60 * 24,
       sendVerificationEmail: async ({ user, url }) => {
@@ -109,6 +109,16 @@ function createAuth() {
       // Server-side password/name policy (the client validates too, but is never trusted).
       before: createAuthMiddleware(async (ctx) => {
         const body = (ctx.body ?? {}) as Record<string, unknown>;
+        const requiresMail =
+          ctx.path === "/request-password-reset" ||
+          ctx.path === "/send-verification-email" ||
+          (ctx.path === "/sign-up/email" && requireEmailVerification);
+        if (requiresMail && !mailReady) {
+          throw new APIError("SERVICE_UNAVAILABLE", {
+            code: "MAIL_NOT_CONFIGURED",
+            message: "Pochta xizmati sozlanmagan. Administrator bilan bog‘laning.",
+          });
+        }
         if (ctx.path === "/sign-up/email") {
           // Logins (usernames) are assigned by the academy, not chosen at sign-up.
           if ("username" in body) throw new APIError("BAD_REQUEST", { message: "Login faqat administrator tomonidan beriladi" });
