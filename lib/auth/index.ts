@@ -135,7 +135,7 @@ function createAuth() {
         if (requiresMail && !mailReady) {
           throw new APIError("SERVICE_UNAVAILABLE", {
             code: "MAIL_NOT_CONFIGURED",
-            message: "Pochta xizmati sozlanmagan. Administrator bilan bog‘laning.",
+            message: "Email xizmati vaqtincha mavjud emas. Yordam uchun administratorga yozing.",
           });
         }
         if (ctx.path === "/sign-up/email") {

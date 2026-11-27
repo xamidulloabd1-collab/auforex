@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { registerUser, testAddress } from "./helpers";
+import { mailAvailable, registerUser, testAddress } from "./helpers";
 
 /**
  * Sign-in reliability. The production bug: Better Auth checks the Origin header whenever the
@@ -65,6 +65,16 @@ test.describe.serial("Authentication", () => {
     await expect(page.getByText("Super Admin").first()).toHaveCount(0);
     const api = await page.request.post("/api/admin/uploads", { data: { action: "init", kind: "video", size: 10, name: "a.mp4", type: "video/mp4" } });
     expect([401, 403]).toContain(api.status());
+  });
+
+  test("password reset page: the form with a mail service, a clear notice without one", async ({ page }) => {
+    await page.goto("/forgot-password");
+    if (mailAvailable) {
+      await expect(page.getByRole("button", { name: "Tiklash havolasini yuborish" })).toBeVisible();
+    } else {
+      await expect(page.getByTestId("password-reset-unavailable")).toContainText("vaqtincha mavjud emas");
+      await expect(page.getByRole("button", { name: "Tiklash havolasini yuborish" })).toHaveCount(0);
+    }
   });
 
   test("sign in on a phone", async ({ browser, baseURL }) => {

@@ -289,7 +289,10 @@ export function AccountActions({
         <div className="flex items-center gap-3">
           <MailIcon className="size-4 text-muted-foreground" />
           <span className="text-sm">{email}</span>
-          <span className={emailVerified ? "text-xs text-success" : "text-xs text-amber-300"}>{emailVerified ? "Tasdiqlangan" : "Tasdiqlanmagan"}</span>
+          {/* Without a mail service nobody can verify, so the "not verified" mark would only alarm. */}
+          {(emailVerified || canResend) && (
+            <span className={emailVerified ? "text-xs text-success" : "text-xs text-amber-300"}>{emailVerified ? "Tasdiqlangan" : "Tasdiqlanmagan"}</span>
+          )}
         </div>
         {!emailVerified && canResend && (
           <Button

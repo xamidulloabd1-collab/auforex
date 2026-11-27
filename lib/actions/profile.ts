@@ -60,7 +60,7 @@ export async function changeEmail(input: z.input<typeof changeEmailSchema>): Pro
     const viewer = await assertUser();
     rateLimit(`change-email:${viewer.id}`, 5, 10 * 60_000);
     const { newEmail, currentPassword } = changeEmailSchema.parse(input);
-    if (!isMailConfigured()) throw new UserFacingError("Pochta xizmati sozlanmagan. Emailni o‘zgartirib bo‘lmaydi.");
+    if (!isMailConfigured()) throw new UserFacingError("Email orqali tasdiqlash vaqtincha mavjud emas — emailni hozircha o‘zgartirib bo‘lmaydi. Yordam uchun administratorga yozing.");
     if (newEmail === viewer.email) throw new UserFacingError("Bu sizning joriy emailingiz");
     const account = await prisma.account.findFirst({ where: { userId: viewer.id, providerId: "credential" }, select: { password: true } });
     if (!account?.password || !(await verifyPassword({ hash: account.password, password: currentPassword }))) {
