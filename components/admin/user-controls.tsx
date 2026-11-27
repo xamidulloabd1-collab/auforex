@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { CrownIcon, Loader2Icon } from "lucide-react";
-import { grantPro, revokePro, revokeUserSessions, setAccountStatus, setSubscriptionExpiry, setUserRole } from "@/lib/actions/admin/users";
+import { grantPro, markEmailVerified, revokePro, revokeUserSessions, setAccountStatus, setSubscriptionExpiry, setUserRole } from "@/lib/actions/admin/users";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,11 +50,13 @@ export function AccountControls({
   status,
   role,
   isSelf,
+  emailVerified,
 }: {
   userId: string;
   status: "ACTIVE" | "SUSPENDED";
   role: "USER" | "SUPER_ADMIN";
   isSelf: boolean;
+  emailVerified: boolean;
 }) {
   if (isSelf) return <p className="text-sm text-muted-foreground">O‘z hisobingiz holati va rolini bu yerda o‘zgartira olmaysiz.</p>;
   return (
@@ -72,6 +74,18 @@ export function AccountControls({
         <ConfirmAction action={() => revokeUserSessions(userId)} title="Barcha sessiyalarni yopasizmi?" description="Foydalanuvchi barcha qurilmalardan chiqariladi." confirmLabel="Yopish">
           Sessiyalarni yopish
         </ConfirmAction>
+        {!emailVerified && (
+          <ConfirmAction
+            action={() => markEmailVerified(userId)}
+            title="Emailni qo‘lda tasdiqlaysizmi?"
+            description="Faqat manzil shu foydalanuvchiniki ekaniga ishonch hosil qilgan bo‘lsangiz (masalan, Telegram orqali so‘radingiz). Shundan keyin u tasdiqlash xatisiz kira oladi."
+            confirmLabel="Tasdiqlash"
+            destructive={false}
+            testId="mark-email-verified"
+          >
+            Emailni qo‘lda tasdiqlash
+          </ConfirmAction>
+        )}
       </div>
       <RoleControls userId={userId} role={role} />
     </div>

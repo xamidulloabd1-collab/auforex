@@ -166,3 +166,24 @@ export async function revokeUserSessions(userId: string): Promise<ActionResult> 
     return actionError(err);
   }
 }
+
+/**
+ * Marks an account's email as verified by hand — for learners who registered before email
+ * verification was switched on, or who cannot receive the link (the admin has checked the address).
+ */
+export async function markEmailVerified(userId: string): Promise<ActionResult> {
+  try {
+    const admin = await assertAdmin();
+    idSchema.parse(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } });
+    if (!user) throw new UserFacingError("Foydalanuvchi topilmadi");
+    if (user.emailVerified) return { ok: true, message: "Email allaqachon tasdiqlangan" };
+    await prisma.user.update({ where: { id: userId }, data: { emailVerified: true } });
+    await audit({ actorId: admin.id, action: "user.email.verify", targetType: "User", targetId: userId, summary: `${user.email}: email qo‘lda tasdiqlandi` });
+    revalidatePath(`/super-admin/users/${userId}`);
+    revalidatePath("/super-admin/users");
+    return { ok: true, message: "Email tasdiqlandi — foydalanuvchi endi kira oladi" };
+  } catch (err) {
+    return actionError(err);
+  }
+}

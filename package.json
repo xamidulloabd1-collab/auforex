@@ -87,5 +87,8 @@
     "esbuild": true,
     "prisma": true,
     "fsevents": true
+  },
+  "overrides": {
+    "effect": "3.22.5"
   }
 }

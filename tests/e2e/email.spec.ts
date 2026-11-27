@@ -12,6 +12,8 @@ import { countMails, linkIn, mailAvailable, nextMail, RESET_SUBJECT, signIn, tes
 const RUN = Date.now().toString(36);
 const PASSWORD = "Trader2026x";
 const NEW_PASSWORD = "Trader2027y";
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? "admin@auforex.local";
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? "ChangeMe-Admin-2026!";
 
 test.skip(!mailAvailable, "No mail source: set E2E_MAILBOX_DIR or E2E_RESEND=1");
 
@@ -73,6 +75,30 @@ test.describe.serial("Email: verification and password reset", () => {
     await page.getByRole("button", { name: "Tasdiqlash xatini qayta yuborish" }).click();
     await expect(page.getByText("Tasdiqlash xati qayta yuborildi")).toBeVisible();
     await nextMail(other, VERIFY_SUBJECT, before);
+  });
+
+  test("Super admin confirms an email by hand (accounts from before verification); the user then signs in", async ({ page, browser }) => {
+    const legacy = testAddress(`mail3-${RUN}`);
+    await fillRegistration(page, "Legacy Tester", legacy);
+    await expect(page.getByTestId("verify-email-notice")).toBeVisible();
+    await tryLogin(page, legacy, PASSWORD);
+    await expect(page.getByText("Email manzilingiz hali tasdiqlanmagan")).toBeVisible();
+
+    const adminCtx = await browser.newContext();
+    const admin = await adminCtx.newPage();
+    await signIn(admin, ADMIN_EMAIL, ADMIN_PASSWORD);
+    await admin.waitForURL((u) => !u.pathname.startsWith("/login"));
+    await admin.goto(`/super-admin/users?q=${encodeURIComponent(legacy)}`);
+    await admin.getByTestId("admin-user-row").first().click();
+    await expect(admin.getByTestId("admin-email-status")).toHaveText("Tasdiqlanmagan");
+    await admin.getByTestId("mark-email-verified").click();
+    await admin.getByTestId("mark-email-verified-confirm").click();
+    await expect(admin.getByTestId("admin-email-status")).toHaveText("Tasdiqlangan");
+    await expect(admin.getByTestId("mark-email-verified")).toHaveCount(0);
+    await adminCtx.close();
+
+    await tryLogin(page, legacy, PASSWORD);
+    await page.waitForURL("**/dashboard");
   });
 
   test("password reset: link sets a new password, other sessions are closed", async ({ page, browser }) => {

@@ -46,6 +46,9 @@ yangi migratsiya yo‘q, `prisma/` papkasi o‘zgarmagan. Mavjud foydalanuvchila
 
 ## 2. Birlashtirishdan oldin hal qilinishi SHART (Vercel API orqali tekshirildi, 26.11.2026)
 
+> **Yangilangan holat (27.11.2026):** to‘liq ro‘yxat, zaxira, orqaga qaytarish va reliz tartibi —
+> [PRODUCTION-RELEASE.md](PRODUCTION-RELEASE.md). Preview endi alohida test bazasida (2-band hal qilingan).
+
 1. **Production’da SMTP yo‘q** (`SMTP_*`, `MAIL_FROM` umuman kiritilmagan). Hozirgi `main` (`68a3601`) SMTP bo‘lmasa
    email tasdiqlashni o‘chirib qo‘yadi. `9a5fcdc` dan boshlab esa production’da tasdiqlash majburiy. Demak bu PR
    (yoki PR #2) SMTP’siz birlashtirilsa, **yangi foydalanuvchilar ro‘yxatdan o‘ta olmaydi** (“Pochta xizmati

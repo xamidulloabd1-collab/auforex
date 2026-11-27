@@ -37,6 +37,7 @@ import { parseS3Config } from "../lib/storage/config";
 import { detectFileType } from "../lib/storage/file-types";
 import { newStorageKey } from "../lib/storage/keys";
 import { S3Client } from "../lib/storage/s3";
+import { databaseFingerprint } from "./lib/db-identity.mjs";
 
 export const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"]);
 
@@ -333,6 +334,11 @@ async function main() {
         ? "Manzil: Bunny Stream"
         : "Manzil hali tanlanmagan (.env.import da S3_* yoki BUNNY_* yo‘q) — faqat reja",
   );
+
+  // Which site this run writes to — compare with the fingerprint in the Vercel build log
+  // ("Baza barmoq izi") before adding --yes; the address and password are never printed.
+  if (process.env.DATABASE_URL) console.log(`Baza barmoq izi: ${databaseFingerprint(process.env.DATABASE_URL)}`);
+  if (destination === "r2" && process.env.S3_BUCKET) console.log(`Bucket: ${process.env.S3_BUCKET.trim()}`);
 
   const prisma = process.env.DATABASE_URL ? createScriptPrisma() : null;
   if (!prisma) console.log("! DATABASE_URL yo‘q — saytda nima borligini tekshirmasdan faqat reja ko‘rsatiladi.\n");
