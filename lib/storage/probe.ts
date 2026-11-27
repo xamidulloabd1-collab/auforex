@@ -48,9 +48,12 @@ export async function probeStorage(config: S3Config, siteOrigin: string): Promis
     await s3.put(key, payload, "text/plain");
     written = true;
     const head = await s3.head(key);
-    if (!head || head.size !== payload.length) throw new Error("yozilgan fayl topilmadi yoki hajmi boshqa");
+    if (!head) throw new Error("yozilgan fayl HEAD so‘rovida topilmadi (404)");
+    if (head.size !== payload.length) throw new Error(`hajm mos emas: yozildi ${payload.length} bayt, HEAD ${head.size} bayt`);
     const back = new Uint8Array(await (await s3.get(key)).arrayBuffer());
-    if (Buffer.compare(Buffer.from(back), Buffer.from(payload)) !== 0) throw new Error("o‘qilgan mazmun yozilganiga mos emas");
+    if (Buffer.compare(Buffer.from(back), Buffer.from(payload)) !== 0) {
+      throw new Error(`o‘qilgan mazmun yozilganiga mos emas (${back.length} / ${payload.length} bayt)`);
+    }
     steps.push({ name: "Kalitlar va bucket: yozish, o‘qish", ok: true });
   } catch (err) {
     steps.push({ name: "Kalitlar va bucket: yozish, o‘qish", ok: false, detail: describe(err) });

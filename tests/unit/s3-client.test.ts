@@ -117,3 +117,36 @@ describe("storage check (npm run storage:check, Super admin → Tizim)", () => {
     expect(steps[0]).toMatchObject({ ok: false, detail: expect.stringMatching(/kalitlar noto‘g‘ri/) });
   });
 });
+
+describe("object size when HEAD has no Content-Length (Next.js runtime with R2)", () => {
+  it("falls back to a one-byte ranged GET and reads the total from Content-Range", async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const headers = init.headers as Record<string, string>;
+      calls.push(`${init.method} ${headers.range ?? ""}`.trim());
+      if (init.method === "HEAD") return new Response(null, { status: 200, headers: { "content-type": "video/mp4" } });
+      return new Response("x", { status: 206, headers: { "content-range": "bytes 0-0/14113902", "content-length": "1" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const info = await new S3Client(config).head("videos/a.mp4");
+    expect(info).toEqual({ size: 14113902, contentType: "video/mp4" });
+    expect(calls).toEqual(["HEAD", "GET bytes=0-0"]);
+  });
+
+  it("uses Content-Length when HEAD has it (no extra request) and reports an empty object as 0", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) =>
+      init.method === "HEAD" ? new Response(null, { status: 200, headers: { "content-length": "55" } }) : new Response(null, { status: 500 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await new S3Client(config).head("books/a.pdf"))?.size).toBe(55);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        init.method === "HEAD" ? new Response(null, { status: 200 }) : new Response("<Error><Code>InvalidRange</Code></Error>", { status: 416 }),
+      ),
+    );
+    expect((await new S3Client(config).head("books/empty.pdf"))?.size).toBe(0);
+  });
+});

@@ -206,9 +206,33 @@ export class S3Client {
   async head(key: string): Promise<{ size: number; contentType: string | null } | null> {
     try {
       const res = await this.send("HEAD", this.objectUrl(key));
-      return { size: Number(res.headers.get("content-length") ?? 0), contentType: res.headers.get("content-type") };
+      const contentType = res.headers.get("content-type");
+      const length = res.headers.get("content-length");
+      if (length !== null && length !== "") return { size: Number(length), contentType };
+      // Inside Next.js (server actions, route handlers — also on Vercel) the HEAD answer from R2 arrives
+      // without Content-Length, which read as 0 bytes and failed every upload's size check. Ask for one
+      // byte instead: the total size is in Content-Range ("bytes 0-0/<size>").
+      return { size: await this.sizeByRange(key), contentType };
     } catch (err) {
       if (err instanceof S3Error && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Object size from a one-byte ranged GET (Content-Range total); 0 for an empty object. */
+  private async sizeByRange(key: string): Promise<number> {
+    try {
+      const res = await this.send("GET", this.objectUrl(key), { headers: { range: "bytes=0-0" } });
+      await res.body?.cancel().catch(() => {});
+      const total = /\/(\d+)\s*$/.exec(res.headers.get("content-range") ?? "")?.[1];
+      if (total) return Number(total);
+      // A full 200 answer (range ignored): its length is the object size.
+      const length = res.headers.get("content-length");
+      if (res.status === 200 && length) return Number(length);
+      throw new S3Error(502, "NoObjectSize", "S3 did not report the object size");
+    } catch (err) {
+      // An empty object cannot satisfy "bytes=0-0".
+      if (err instanceof S3Error && err.status === 416) return 0;
       throw err;
     }
   }
