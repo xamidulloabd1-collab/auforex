@@ -262,8 +262,13 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     await page.getByTestId("mark-complete").click();
     await expect(page.getByTestId("lesson-status")).toHaveText("Dars yakunlangan");
 
+    // A fresh database holds only this lesson (100%); a shared Preview database keeps lessons from earlier runs,
+    // so check the counts this new user owns: exactly one lesson completed, and the percent that follows from it.
     await page.goto("/lessons");
-    await expect(page.getByTestId("learning-progress")).toContainText("100%");
+    const progress = page.getByTestId("learning-progress");
+    await expect(progress).toContainText(/\b1\/\d+ dars yakunlangan/);
+    const total = Number((await progress.innerText()).match(/\b1\/(\d+) dars/)![1]);
+    await expect(progress).toContainText(`${Math.round(100 / total)}%`);
     await page.goto("/dashboard/learning");
     await expect(page.getByText(LESSON_TITLE).first()).toBeVisible();
   });

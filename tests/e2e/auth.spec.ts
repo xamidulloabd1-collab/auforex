@@ -40,9 +40,12 @@ test.describe.serial("Authentication", () => {
     await page.waitForURL("**/login**");
   });
 
-  test("cross-site requests stay rejected", async ({ request, baseURL }) => {
-    const res = await request.post("/api/auth/sign-in/email", {
-      headers: { origin: "https://evil.example", cookie: "theme=dark" },
+  test("cross-site requests stay rejected", async ({ context, baseURL }) => {
+    // The cookie goes into the jar, not a raw `cookie` header: a raw header would replace the jar
+    // (and with it the Vercel protection cookie a deployed Preview needs), so the 401 would come from Vercel.
+    await context.addCookies([{ name: "theme", value: "dark", url: baseURL! }]);
+    const res = await context.request.post("/api/auth/sign-in/email", {
+      headers: { origin: "https://evil.example" },
       data: { email: EMAIL, password: PASSWORD },
     });
     expect(res.status()).toBe(403);
