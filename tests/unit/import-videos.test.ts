@@ -90,3 +90,29 @@ describe("MP4 duration", () => {
     expect(await mp4DurationSeconds(noMoov)).toBeNull();
   });
 });
+
+describe("bulk import to R2", () => {
+  it("picks the destination from --to or from the settings that are present", async () => {
+    const { pickDestination } = await import("../../scripts/import-videos");
+    expect(pickDestination("r2", {})).toBe("r2");
+    expect(pickDestination(undefined, { BUNNY_LIBRARY_ID: "1", BUNNY_API_KEY: "k" })).toBe("bunny");
+    expect(pickDestination(undefined, { S3_ENDPOINT: "https://a.r2.cloudflarestorage.com", S3_BUCKET: "b" })).toBe("r2");
+    expect(pickDestination(undefined, {})).toBeNull();
+    expect(() => pickDestination("s3", {})).toThrow(/r2/);
+  });
+
+  it("accepts only browser-playable videos, checked by content", async () => {
+    const { R2_VIDEO_TYPES, sniffVideo } = await import("../../scripts/import-videos");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    expect(Object.keys(R2_VIDEO_TYPES).sort()).toEqual([".m4v", ".mp4", ".webm"]);
+    const dir = mkdtempSync(path.join(tmpdir(), "import-"));
+    const mp4 = path.join(dir, "a.mp4");
+    writeFileSync(mp4, Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from("ftypisom"), Buffer.alloc(52)]));
+    const fake = path.join(dir, "b.mp4");
+    writeFileSync(fake, "not a video at all, just text pretending to be an mp4 file");
+    expect((await sniffVideo(mp4))?.mime).toBe("video/mp4");
+    expect(await sniffVideo(fake)).toBeNull();
+  });
+});

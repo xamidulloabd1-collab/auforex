@@ -190,7 +190,7 @@ comes from and the database host the site will use — never the values. Details
 | `npm run founder:password [password]` | Set/reset the founder’s password in your database |
 | `npm run admin:create -- --email … [--password …] [--name …] [--username …]` | Create or promote a super admin (PowerShell: `npx tsx scripts/create-admin.ts --email …`) |
 | `npm run build:vercel` | Vercel build: settings check → production-only `prisma migrate deploy` → `next build` |
-| `npm run videos:import -- "<folder>" [--yes]` | Bulk-upload a folder of videos to Bunny Stream and create courses/lessons ([docs/VIDEO-DARSLAR.md](docs/VIDEO-DARSLAR.md)) |
+| `npm run videos:import -- "<folder>" --to r2 [--yes]` | Bulk-upload a folder of MP4/WebM videos straight to the site's R2 bucket (multipart, verified) — or `--to bunny` for Bunny Stream — and create courses/lessons in order ([docs/VIDEO-DARSLAR.md](docs/VIDEO-DARSLAR.md)) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:e2e` | End-to-end tests (Playwright) against a running server |
 | `npm run e2e:media [folder]` | Creates the media files the E2E suite uploads (default `/tmp/e2emedia`; `big.mp4` needs ffmpeg) |
@@ -347,7 +347,7 @@ tests/              unit (Vitest), e2e (Playwright), fixtures
 | SMTP | Code complete; verification, resend, password reset and email change pass end-to-end against a real SMTP server (local test server). Needs real SMTP credentials on Vercel ([docs/EMAIL.md](docs/EMAIL.md)); verify with Super admin → Sozlamalar → Tizim → test email |
 | Cloud object storage | S3-compatible driver implemented; direct and multipart uploads, CORS and ETag pass end-to-end against an S3 emulator that enforces CORS. Needs a real Cloudflare R2 bucket + `S3_*` variables on Vercel; verify with Super admin → Sozlamalar → Tizim → “Omborni tekshirish” (or `npm run storage:check`) |
 | Founder data | Profile text and Instagram are filled; **portrait** and optional "Ta’lim falsafasi" still need to be added in Super admin → Founder. The founder's real email should replace the placeholder `founder@auforex.local` |
-| Video lessons | None uploaded (by design). Upload them in Super admin → Darslar (category, lesson number, Free/PRO) or with `npm run videos:import` (Bunny) |
+| Video lessons | None uploaded (by design). Upload them in Super admin → Darslar (category, lesson number, Free/PRO) or in bulk with `npm run videos:import -- "<folder>" --to r2` (tested against the real R2 preview bucket) |
 | Book distribution rights | Confirm rights for the three supplied PDFs (they are published by the seed) |
 | Orphaned uploads | Files uploaded in a panel form that is then abandoned stay in storage; add a periodic cleanup job if storage space matters |
 | Multi-instance rate limiting | App-level limits (uploads/progress/submissions) are in-memory per instance; auth limits are already DB-backed |

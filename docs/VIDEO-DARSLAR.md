@@ -59,7 +59,16 @@ Sarlavha talabaga **“Texnik tahlil — 5-dars”** ko‘rinishida chiqadi (for
 
 ## Ko‘p videoni bir buyruq bilan qo‘shish (o‘z kompyuteringizda)
 
-`npm run videos:import` papkadagi videolarni to‘g‘ridan-to‘g‘ri Bunny’ga yuklaydi va saytga kurs/dars qilib, tartib bilan qo‘shadi.
+`npm run videos:import` papkadagi videolarni yuklaydi va saytga kurs/dars qilib, tartib bilan qo‘shadi. Ikki manzil bor:
+
+- **`--to r2`** (tavsiya) — saytning o‘z ombori (Cloudflare R2), admin panelidan yuklangan videolar bilan bir xil:
+  himoyalangan, faqat PRO/bepul qoidalari bo‘yicha o‘ynaydi. Faqat **MP4 (H.264/AAC)** va **WebM** — brauzer o‘ynaydigan
+  formatlar; boshqalari (MOV, MKV, AVI) rejada “o‘tkazib yuboriladi” deb ko‘rsatiladi, ularni avval MP4 ga o‘tkazing.
+  10 MB dan katta videolar 10 MB bo‘laklab, bir vaqtda 4 ta bo‘lak yuklanadi; uzilgan bo‘lak qayta yuboriladi,
+  xatoda ombordagi chala fayl o‘chiriladi. Har video mazmuni (birinchi baytlar) va yuklangandan keyin hajmi tekshiriladi.
+- **`--to bunny`** — Bunny Stream (darslar Bunny pleyeri orqali o‘ynaydi).
+
+`--to` berilmasa: `.env.import` da Bunny kalitlari bo‘lsa Bunny, aks holda S3_* bo‘lsa R2.
 
 **1. Papkani tayyorlang** — har bir kurs alohida papka, videolar raqam bilan boshlansin:
 
@@ -79,19 +88,28 @@ MP4/MOV fayllarning davomiyligi avtomatik o‘qiladi.
 
 ```
 DATABASE_URL="…"          # Vercel → Storage → bazangiz → .env.local yorlig‘idagi DATABASE_URL
+# R2 uchun (Vercel’dagi qiymatlar bilan bir xil, docs/FAYL-SAQLASH.md):
+S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+S3_BUCKET="auforex-media"
+S3_ACCESS_KEY_ID="…"
+S3_SECRET_ACCESS_KEY="…"
+# yoki Bunny uchun:
 BUNNY_LIBRARY_ID="123456" # Bunny → Stream → kutubxona → API → Video Library ID
 BUNNY_API_KEY="…"         # o‘sha sahifadagi API Key (token kaliti emas!)
 ```
 
+> Production bazasi va bucket’iga yuklashdan oldin bir marta test baza/bucket bilan sinab ko‘ring.
+
 **3. Avval reja, keyin yuklash:**
 
 ```
-npm run videos:import -- "D:\AU Forex darslar"          # nima qo‘shilishini ko‘rsatadi, hech narsa yuklamaydi
-npm run videos:import -- "D:\AU Forex darslar" --yes    # yuklaydi
+npm run videos:import -- "D:\AU Forex darslar" --to r2          # reja: nima qo‘shilishini ko‘rsatadi, hech narsa yuklamaydi
+npm run videos:import -- "D:\AU Forex darslar" --to r2 --yes    # yuklaydi
 ```
 
 Qo‘shimcha: `--category "Texnik tahlil"` (yangi kurslarga kategoriya), `--course "Nom"` (videolar papka ichida to‘g‘ridan-to‘g‘ri bo‘lsa).
 
 - Internet uzilsa yoki biror video o‘tmasa — buyruqni qayta ishga tushiring: qo‘shilganlari o‘tkazib yuboriladi, qolganlari o‘z o‘rniga tushadi.
 - Yangi kurslar **nashr qilinmagan** holda yaratiladi: Super admin → Kurslar’da tekshirib, “Nashr qilingan”ni yoqing.
-- Bunny videoni qayta ishlashi (encoding) har bir video uchun bir necha daqiqa oladi — shu vaqt ichida pleyer “processing” deydi.
+- Bunny videoni qayta ishlashi (encoding) har bir video uchun bir necha daqiqa oladi — shu vaqt ichida pleyer “processing” deydi (R2 da bunday kutish yo‘q).
+- Darslar PRO sifatida yaratiladi; bepul qilish, kategoriya yoki muqova — Super admin → Video darslar → Tahrirlash.
