@@ -7,6 +7,12 @@ import { defineConfig, devices } from "@playwright/test";
  *   PLAYWRIGHT_CHROME_PATH — optional system Chrome/Chromium executable
  */
 const executablePath = process.env.PLAYWRIGHT_CHROME_PATH;
+/**
+ * Testing a Vercel Preview protected by Vercel Authentication: Vercel's "Protection Bypass for
+ * Automation" secret (Project → Settings → Deployment Protection), sent as its documented headers.
+ * Never commit the value; pass it only through the environment of the test run.
+ */
+const vercelBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -21,6 +27,7 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     launchOptions: executablePath ? { executablePath, args: ["--no-sandbox"] } : undefined,
+    extraHTTPHeaders: vercelBypass ? { "x-vercel-protection-bypass": vercelBypass, "x-vercel-set-bypass-cookie": "true" } : undefined,
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { registerUser, testAddress } from "./helpers";
 
 /**
  * Sign-in reliability. The production bug: Better Auth checks the Origin header whenever the
@@ -7,7 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
  */
 const RUN = Date.now().toString(36);
 const PASSWORD = "Trader2026x";
-const EMAIL = `auth-${RUN}@example.com`;
+const EMAIL = testAddress(`auth-${RUN}`);
 
 async function signIn(page: Page, id: string, password: string) {
   await page.goto("/login");
@@ -19,14 +20,7 @@ async function signIn(page: Page, id: string, password: string) {
 test.describe.serial("Authentication", () => {
   test("register while a cookie is already set, session survives reload", async ({ page, context, baseURL }) => {
     await context.addCookies([{ name: "theme", value: "dark", url: baseURL! }]);
-    await page.goto("/register");
-    await page.getByLabel("Ism va familiya").fill("Auth Tester");
-    await page.getByLabel("Email").fill(EMAIL);
-    await page.getByLabel("Parol", { exact: true }).fill(PASSWORD);
-    await page.getByLabel("Parolni tasdiqlang").fill(PASSWORD);
-    await page.getByRole("checkbox").check();
-    await page.getByRole("button", { name: "Ro‘yxatdan o‘tish" }).click();
-    await page.waitForURL("**/dashboard");
+    await registerUser(page, { name: "Auth Tester", email: EMAIL, password: PASSWORD });
     // Session survives a reload.
     await page.reload();
     await expect(page).toHaveURL(/\/dashboard/);

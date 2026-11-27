@@ -101,13 +101,17 @@ function createAuth() {
       storage: "database",
       window: 60,
       max: 100,
+      // Limits are per IP address. Many students share one address (mobile carriers' NAT, a
+      // classroom Wi-Fi signing in when a lesson starts), and every registration also sends one
+      // verification email from the form, so the limits leave room for a group signing up and in
+      // together while still stopping scripted abuse (passwords: 8+ chars with letters and digits).
       customRules: {
-        "/sign-in/email": { window: 60, max: 15 },
-        "/sign-in/username": { window: 60, max: 15 },
-        "/sign-up/email": { window: 60 * 10, max: 10 },
-        "/request-password-reset": { window: 60 * 10, max: 5 },
+        "/sign-in/email": { window: 60, max: 30 },
+        "/sign-in/username": { window: 60, max: 30 },
+        "/sign-up/email": { window: 60 * 10, max: 30 },
+        "/request-password-reset": { window: 60 * 10, max: 10 },
         "/reset-password": { window: 60 * 10, max: 10 },
-        "/send-verification-email": { window: 60 * 10, max: 5 },
+        "/send-verification-email": { window: 60 * 10, max: 30 },
         "/change-password": { window: 60 * 10, max: 10 },
       },
     },

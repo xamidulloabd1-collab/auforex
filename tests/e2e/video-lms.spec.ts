@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { registerUser, testAddress } from "./helpers";
 
 /**
  * Video lesson management: categories, lesson numbers, Free/PRO access, direct uploads (large
@@ -36,14 +37,7 @@ async function login(page: Page, id: string, password: string) {
 }
 
 async function register(page: Page, name: string, email: string) {
-  await page.goto("/register");
-  await page.getByLabel("Ism va familiya").fill(name);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Parol", { exact: true }).fill(PASSWORD);
-  await page.getByLabel("Parolni tasdiqlang").fill(PASSWORD);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Ro‘yxatdan o‘tish" }).click();
-  await page.waitForURL("**/dashboard");
+  await registerUser(page, { name, email, password: PASSWORD });
 }
 
 async function lessonIdFromAdmin(page: Page, title: string) {
@@ -251,7 +245,7 @@ test.describe.serial("Video LMS", () => {
 
   test("FREE user: free lesson plays, PRO lesson locked; the video API refuses direct calls", async () => {
     const page = await freeUser.newPage();
-    await register(page, "Free LMS", `free-lms-${RUN}@example.com`);
+    await register(page, "Free LMS", testAddress(`free-lms-${RUN}`));
     await page.goto("/lessons");
     const proCard = page.getByTestId("lesson-card").filter({ hasText: PRO_LESSON });
     await expect(proCard).toHaveAttribute("data-lock-reason", "pro");
@@ -300,7 +294,7 @@ test.describe.serial("Video LMS", () => {
 
   test("PRO user: numbered heading, video plays (from the bucket when S3 is on), progress saved", async () => {
     const page = await proUser.newPage();
-    const email = `pro-lms-${RUN}@example.com`;
+    const email = testAddress(`pro-lms-${RUN}`);
     await register(page, "Pro LMS", email);
     const a = await admin.newPage();
     await a.goto(`/super-admin/users?q=${encodeURIComponent(email)}`);

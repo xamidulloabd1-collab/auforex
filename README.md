@@ -212,13 +212,15 @@ npm run test:e2e
 
 Media files for the upload tests: `npm run e2e:media` (writes `small.mp4`, `big.mp4`, `founder.png`, a 2-page `book.pdf` to `/tmp/e2emedia`, or set `E2E_MEDIA_DIR`).
 
-Email flows (registration verification, resend, password reset, email change) run only with `E2E_MAILBOX_DIR`: start the server with `SMTP_*` pointing at a test SMTP server that saves each message as an `.eml` file in that folder (e.g. `aiosmtpd`), leave `REQUIRE_EMAIL_VERIFICATION` empty, then `E2E_MAILBOX_DIR=<folder> npx playwright test tests/e2e/email.spec.ts`. The other specs register users without verification, so run them against a server with `REQUIRE_EMAIL_VERIFICATION=false`.
+Against a deployed Vercel Preview: `E2E_BASE_URL=<preview URL>`, `E2E_RESEND=1` (test users get Resend test addresses `delivered+…@resend.dev`; verification and reset links are read through the Resend API with `RESEND_API_KEY`), `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` and `E2E_FOUNDER_PASSWORD` for that Preview's database, and — when the Preview is protected by Vercel Authentication — `VERCEL_AUTOMATION_BYPASS_SECRET` (Project → Settings → Deployment Protection → Protection Bypass for Automation; never commit it). Registration helpers open the verification email automatically whenever the site requires it (`tests/e2e/helpers.ts`).
+
+Email flows (registration verification, resend, password reset, email change) run only with `E2E_MAILBOX_DIR` or `E2E_RESEND=1`: start the server with `SMTP_*` pointing at a test SMTP server that saves each message as an `.eml` file in that folder (e.g. `aiosmtpd`), leave `REQUIRE_EMAIL_VERIFICATION` empty, then `E2E_MAILBOX_DIR=<folder> npx playwright test tests/e2e/email.spec.ts`. The other specs work in both modes: with a mail source they verify new users through their email; without one, run them against a server with `REQUIRE_EMAIL_VERIFICATION=false`.
 
 Object-storage mode (behaves like Vercel): start the server with `VERCEL=1` and the `S3_*` variables pointing at a test bucket (any S3 emulator, e.g. `moto_server`, with the CORS policy from `docs/FAYL-SAQLASH.md`), and add `E2E_S3=1` to the test command. Uploads then go browser → bucket and videos are checked through the presigned redirect.
 
 Windows PowerShell: set the variables with `$env:E2E_BASE_URL="http://localhost:3000"` (one line per variable), then `npm run test:e2e`.
 
-The E2E suite signs up users and signs in many times per run; auth rate limits (15 sign-ins per minute, 10 sign-ups per 10 minutes per IP) are stored in the database. Use a fresh database for each run, and do not point several test servers at the same database at once — or clear the limits between runs with `DELETE FROM "RateLimit";`.
+The E2E suite signs up users and signs in many times per run; auth rate limits (per IP: 30 sign-ins per minute, 30 sign-ups and 30 verification emails per 10 minutes — sized for students sharing one address) are stored in the database. Use a fresh database for each run, and do not point several test servers at the same database at once — or clear the limits between runs with `DELETE FROM "RateLimit";`.
 
 Results of the verification run for this delivery: [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
@@ -280,7 +282,7 @@ Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md), [docs/FAYL-SAQLASH.md](
 * **Uploads** are streamed (no full buffering), size-limited while streaming and validated by **magic bytes**, not by the client's file name or MIME type.
 * **Sessions:** httpOnly, `SameSite=Lax`, `Secure` on HTTPS, 30-day DB sessions (revocable; suspended users are signed out and blocked at sign-in).
 * **CSRF:** Better Auth origin checks; same-origin `Origin` check on every state-changing route handler; Server Actions are origin-checked by Next.js.
-* **Rate limiting:** database-backed limits for sign-in (15/min/IP), sign-up (10/10 min), password reset, verification and password change; in-memory limits for uploads, progress and submissions.
+* **Rate limiting:** database-backed per-IP limits for sign-in (30/min), sign-up and verification emails (30/10 min each — many students share one IP behind carrier NAT or a classroom Wi-Fi), password reset (10/10 min) and password change; in-memory limits for uploads, progress and submissions.
 * **Headers:** per-request nonce CSP (`strict-dynamic`, `frame-ancestors 'none'`, explicit frame allow-list for TradingView and video hosts), HSTS (production), `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy, Permissions-Policy, COOP.
 * **Passwords:** scrypt (Better Auth), policy enforced server-side (8–128 chars, letters + digits); reset tokens expire in 1 h, are single-use, and reset revokes other sessions; reset requests do not reveal whether an account exists.
 * **Audit log** of every sensitive admin action, with IP.
