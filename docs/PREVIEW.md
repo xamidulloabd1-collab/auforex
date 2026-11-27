@@ -11,19 +11,24 @@ Shu branch uchun qiymatlar:
 | Preview manzili | `https://auforex-git-claude-final-st-eddf8f-hamidullos-projects-d86a2122.vercel.app` |
 | Himoya | Vercel Authentication — faqat Vercel hisobingizga kirgan holda ochiladi |
 
-## Hozirgi holat (Vercel API orqali tekshirildi, 26.11.2026)
+## Hozirgi holat (27.11.2026, API orqali sozlangan va tekshirilgan)
 
-| O‘zgaruvchi | Production | Preview | Xulosa |
-|---|---|---|---|
-| `DATABASE_URL`, `DATABASE_URL_POOLED` | ✓ | ✓ **(xuddi shu yozuv)** | ⚠️ Preview **production bazasiga** ulangan |
-| `BETTER_AUTH_SECRET` | ✓ | ✓ (alohida) | ✓ |
-| `S3_*` | ✓ | — | Preview’da yuklash o‘chiq |
-| `SMTP_*`, `MAIL_FROM` | — | — | ⚠️ Hech qayerda pochta yo‘q |
-| `NEXT_PUBLIC_APP_URL` | ✓ | — | ✓ Preview o‘z manzilini avtomatik oladi |
+Shu branch uchun barcha qiymatlar Vercel’da **faqat Preview + `claude/final-stabilization`** doirasida; Production
+yozuvlariga tegilmagan.
 
-Preview build migratsiya va seed ishlatmaydi, ya’ni deploy bazani o‘zgartirmaydi. Lekin Preview **saytida** ro‘yxatdan
-o‘tish yoki yuklash ma’lumotni production bazasiga yozadi. Shuning uchun 1-qadam bajarilmaguncha Preview’da **faqat
-ko‘rib chiqing**: ro‘yxatdan o‘tmang, kontent qo‘shmang.
+| Resurs | Holat |
+|---|---|
+| Baza | Prisma `auforex-preview` (`us-east-1`), alohida ulanish. Preview build barmoq izi `443e410d3d96` (production `85bcf18c856b`), migratsiyalar hali qo‘llanmagan — bo‘sh, alohida baza ✓ |
+| `DATABASE_URL`, `DATABASE_URL_POOLED`, `FOUNDER_PASSWORD` | ✓ (parol Vercel’da ko‘rinadigan turda — Preview’ga `asadbek` bilan kirish uchun) |
+| R2 | `auforex-media-preview`, private, CORS faqat Preview manziliga, chala multipart 1 kunda bekor ✓ · `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION` ✓ |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | ⏳ egasi kiritadi (pastda 2-bo‘lim, 4-qadam) |
+| SMTP | Resend test rejimi: `smtp.resend.com:465`, faqat yuborishga ruxsatli kalit, `onboarding@resend.dev` ✓ |
+| Migratsiya + seed | ⏳ egasining ruxsatidan keyin (`PREVIEW_DB_FINGERPRINT=443e410d3d96`) |
+
+Resend test rejimida xatlar faqat Resend test manzillariga (`delivered+…@resend.dev`) va Resend hisobi egasiga yetadi —
+Preview sinovlari uchun aynan shu kerak; boshqa manzillarga xat ketmaydi.
+
+Quyidagi qo‘lda bajariladigan qadamlar yuqoridagilar avtomatik bajarilmagan holat uchun qoldirilgan.
 
 ## 1. Alohida test bazasi (eng muhim)
 

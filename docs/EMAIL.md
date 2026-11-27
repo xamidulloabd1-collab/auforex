@@ -18,6 +18,12 @@ Istalgan SMTP xizmati ishlaydi. Oddiy variantlar:
 - **Gmail** (kichik hajm uchun) — `smtp.gmail.com`, port `465`, login = Gmail manzil, parol = Google hisobidagi
   **App password** (oddiy parol ishlamaydi; 2-bosqichli kirish yoqilgan bo‘lishi kerak).
 
+> **Muhim (Resend):** domen tasdiqlanmaguncha Resend faqat `onboarding@resend.dev` dan va faqat hisob egasiga hamda
+> Resend test manzillariga xat yuboradi — haqiqiy foydalanuvchilarga **yetib bormaydi**. Bu Preview sinovlari uchun
+> yetarli (`docs/PREVIEW.md`), lekin production uchun o‘z domeningiz kerak: Resend → **Domains → Add Domain** → u
+> ko‘rsatgan DNS yozuvlarini (SPF, DKIM, MX) domen provayderingizga qo‘shing → **Verify** → `MAIL_FROM` ni shu
+> domendagi manzilga o‘zgartiring. O‘z domeningiz bo‘lmasa — Gmail (App password) eng sodda variant.
+
 Professional provayderlarda (Resend, Brevo) **domeningizni tasdiqlang** (DNS’ga SPF/DKIM yozuvlari) — busiz xatlar
 Spam’ga tushadi yoki rad etiladi. `MAIL_FROM` shu tasdiqlangan domendagi manzil bo‘lsin.
 
