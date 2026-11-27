@@ -1,3 +1,22 @@
+# Deployed Vercel Preview — 27 November 2026 (branch `claude/final-stabilization`)
+
+Preview: `auforex-git-claude-final-st-eddf8f-hamidullos-projects-d86a2122.vercel.app` (Vercel Authentication on;
+tested through Vercel's Protection Bypass for Automation, authorized by the owner, cookie scoped to the Preview host).
+
+| Check | Result |
+|---|---|
+| Isolated database | Prisma API: `db_wlbm0xphvipstltex86glcef` “auforex-preview”, `us-east-1`, ready; connection `con_p9t8f8hrcu9o0jgd88ntsqgm` (direct `db.prisma.io`, pooled `pooled.db.prisma.io`) |
+| Fingerprints in the Preview build | direct `443e410d3d96`, pooled `443e410d3d96` — production is `85bcf18c856b`; before init all 4 migrations “not yet applied” (empty database) |
+| Migrations + seed (owner-authorized, test database only) | ✅ 4 migrations applied, seed: categories, settings, 3 bundled books, founder `asadbek`, test admin on a Resend test address; gate `PREVIEW_DB_FINGERPRINT=443e410d3d96` passed; no password in logs |
+| Guest E2E on the Preview (public pages, guests sent to sign-in, phone layout) | ✅ 3/3 |
+| Security headers | ✅ CSP (nonce, `frame-ancestors 'none'`), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP; no `X-Powered-By` |
+| `/api/health` | 503 `config_invalid: S3_ENDPOINT` — `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` not yet set for this branch (the owner enters them in Vercel) |
+| Sign-in / registration / storage / SMTP flows on the Preview | ⏸ blocked by the same incomplete S3 setting (auth answers 503 `SERVER_MISCONFIGURED` by design); not tested yet |
+
+Production deployments, variables and data were not touched.
+
+---
+
 # Test results — 26 November 2026 (final stabilization, branch `claude/final-stabilization`, base `9a5fcdc`)
 
 Environment: Linux, Node 22.23, PostgreSQL 16, Chromium (Playwright 1.65), production build (`next build` + `next start`).
