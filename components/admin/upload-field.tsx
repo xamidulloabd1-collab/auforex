@@ -241,6 +241,14 @@ export function UploadField({
     }
   }
 
+  // A file picked while the page was still loading (before this component took over the input)
+  // fires no change event React sees; pick it up once the field is ready instead of losing it.
+  const pickEarlyFile = React.useEffectEvent(() => {
+    const early = inputRef.current?.files?.[0];
+    if (early) void handle(early);
+  });
+  React.useEffect(() => pickEarlyFile(), []);
+
   const uploading = progress !== null;
   return (
     <div className="grid gap-2">
