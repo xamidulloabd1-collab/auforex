@@ -88,6 +88,8 @@ describe("Vercel build: Preview database gate", () => {
     expect(r.calls).not.toContain("migrate deploy");
     expect(r.calls).toContain("npm run build");
     expect(r.out).toContain(databaseFingerprint(PROD)!);
+    // Both connections are named with their own fingerprint (same database → same value).
+    expect(r.out).toMatch(new RegExp(`direct: db\\.prisma\\.io:5432 → ${databaseFingerprint(PROD)} · pooled: pooled\\.db\\.prisma\\.io:5432 → ${databaseFingerprint(PROD_POOLED)}`));
     expect(r.out).not.toContain("prod_secret");
   });
 

@@ -63,7 +63,19 @@ if (target !== "production") {
   const mismatch = previewDatabaseMismatch(env);
   if (mismatch) die(mismatch);
   const fingerprint = databaseFingerprint(env.DATABASE_URL);
+  const pooledFingerprint = env.DATABASE_URL_POOLED?.trim() ? databaseFingerprint(env.DATABASE_URL_POOLED) : null;
+  const hostOf = (u) => {
+    try {
+      return new URL(u).host;
+    } catch {
+      return "?";
+    }
+  };
   log(`Baza barmoq izi (fingerprint): ${fingerprint ?? "aniqlanmadi"} — manzil va parol chiqarilmaydi`);
+  log(
+    `  direct: ${hostOf(env.DATABASE_URL)} → ${fingerprint ?? "?"}` +
+      (pooledFingerprint ? ` · pooled: ${hostOf(env.DATABASE_URL_POOLED)} → ${pooledFingerprint}` : " · pooled: o‘rnatilmagan"),
+  );
   log("Baza holati (faqat o‘qish, prisma migrate status):");
   const status = run([prismaCli, "migrate", "status"], { capture: true });
   const statusText = `${status.stdout ?? ""}${status.stderr ?? ""}`.trim();

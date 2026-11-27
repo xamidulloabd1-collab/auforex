@@ -27,7 +27,10 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     launchOptions: executablePath ? { executablePath, args: ["--no-sandbox"] } : undefined,
-    extraHTTPHeaders: vercelBypass ? { "x-vercel-protection-bypass": vercelBypass, "x-vercel-set-bypass-cookie": "true" } : undefined,
+    // Headers would go to every host the page loads (e.g. TradingView); a cookie stays on the Preview host.
+    // E2E_STORAGE_STATE: a Playwright storage state holding the Vercel bypass cookie for that host only.
+    storageState: process.env.E2E_STORAGE_STATE || undefined,
+    extraHTTPHeaders: vercelBypass && !process.env.E2E_STORAGE_STATE ? { "x-vercel-protection-bypass": vercelBypass, "x-vercel-set-bypass-cookie": "true" } : undefined,
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });
