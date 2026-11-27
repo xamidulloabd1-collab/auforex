@@ -10,8 +10,26 @@ tested through Vercel's Protection Bypass for Automation, authorized by the owne
 | Migrations + seed (owner-authorized, test database only) | ✅ 4 migrations applied, seed: categories, settings, 3 bundled books, founder `asadbek`, test admin on a Resend test address; gate `PREVIEW_DB_FINGERPRINT=443e410d3d96` passed; no password in logs |
 | Guest E2E on the Preview (public pages, guests sent to sign-in, phone layout) | ✅ 3/3 |
 | Security headers | ✅ CSP (nonce, `frame-ancestors 'none'`), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP; no `X-Powered-By` |
-| `/api/health` | 503 `config_invalid: S3_ENDPOINT` — `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` not yet set for this branch (the owner enters them in Vercel) |
-| Sign-in / registration / storage / SMTP flows on the Preview | ⏸ blocked by the same incomplete S3 setting (auth answers 503 `SERVER_MISCONFIGURED` by design); not tested yet |
+| Object storage for this branch | Cloudflare R2 bucket `auforex-media-preview` (test bucket; the production bucket was not touched). Keys: R2 **temporary credentials** from the Cloudflare API (`temp-access-credentials`, scoped to this one bucket, `object-read-write`, valid until 3 Dec 2026 18:49 UTC with the owner's parent token). `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_SESSION_TOKEN` set through the Vercel API on **Preview + branch `claude/final-stabilization` only** (encrypted); values never printed |
+| Bucket CORS | only the Preview origin, methods GET/PUT/HEAD, headers `Content-Type`/`Range`, exposes `ETag`, max age 1 h; another origin is refused (checked by E2E). Lifecycle: unfinished multipart uploads are aborted after 1 day |
+| `/api/health` | ✅ 200 `ok` (was 503 `config_invalid: S3_ENDPOINT` while the keys were missing) |
+| Sign-in / registration (the 503) | ✅ fixed: wrong password → 401 “Email yoki parol noto‘g‘ri”, registration → verification email, sign-in after verification → dashboard |
+| Super admin → Sozlamalar → Tizim | ✅ storage check 5/5 (keys, write/read/delete, CORS for the site, `ETag` exposed, multipart); test email sent through Resend |
+| Uploads to R2 from the browser | ✅ image (founder portrait), PDF (book, opens in the reader), small video (single PUT), 13.5 MB video (2 × 10 MiB-part multipart, part retried after a dropped request, cancel aborts the multipart upload) |
+| Playback from R2 | ✅ `/api/lessons/<id>/video` → 302 no-store to a presigned link (`X-Amz-Security-Token`, 3 h), Range 206 `video/mp4`; bytes at the start, across the part boundary and at the end match the source file; `<video>` reaches `readyState 4` |
+| SMTP (Resend, `delivered+…@resend.dev` test addresses) | ✅ verification email, password reset email, link opens and works, test email from the Tizim tab |
+| **Full E2E on the deployed Preview** (`8d3c785`, `E2E_S3=1` real R2, `E2E_RESEND=1`) | ✅ **39/39** in 4.4 min: auth (cookies present, cross-site 403, phone), email verification / resend / password reset / email change, guest, register, PRO gate + Telegram request, admin grants PRO, range streaming + progress, PDF reader, protected files, challenges, admin-only routes, founder login + team, phone layout, TradingView, payment confirmation, every Super admin page, categories, lessons (number + category heading, multipart, duplicate number, fake MP4 refused), upload cancel/retry, FREE/PRO/guest access, founder portrait, books + check-files, Tizim storage check |
+| Local checks on the same commit | ✅ `npm run typecheck`, `npm run lint` (0 warnings), unit 120/120, `next build` |
+| Bulk import (`npm run videos:import -- <folder> --to r2 --yes`) | ✅ against the real bucket with a local test database: 2 lessons (single PUT + multipart) uploaded, size checked in the bucket, lessons saved as uploaded videos; second run skipped both |
+
+### Bugs found on the deployed Preview and fixed
+
+1. **R2 HEAD lost `Content-Length` inside the Next.js runtime** → every upload was reported as 0 bytes (“hajm mos emas”). The S3 client now reads the size with a one-byte ranged GET (`Content-Range`) when HEAD has no length (`lib/storage/s3.ts`, unit tests).
+2. **Temporary R2 credentials** were not supported → `S3_SESSION_TOKEN` (optional) is signed into presigned URLs and requests.
+3. **Auth rate limits** were too low for a class registering at once with verification on → per-endpoint limits.
+4. **Test harness on a protected Preview**: Playwright storage state for the access cookie, proxy for API requests, no global custom header (it broke the bucket's CORS preflight), the extra cookie in the jar instead of a raw `cookie` header (that replaced the access cookie, so Vercel answered 401), progress check independent of lessons left by earlier runs.
+
+Note: a Playwright error log printed the Preview access cookie once; it was redacted locally and never committed or posted. The owner should regenerate the Protection Bypass for Automation secret (Vercel → Project → Settings → Deployment Protection).
 
 Production deployments, variables and data were not touched.
 
