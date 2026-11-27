@@ -54,35 +54,23 @@ production bucket’i, production sozlamalari va deploy’i o‘zgartirilmadi. M
 Eslatma: PR #3 da S3 formati noto‘g‘ri bo‘lsa faqat fayl yuklash/ko‘rish ishlamaydi (aniq xabar bilan). Kirish va
 ro‘yxatdan o‘tishga ta’sir qilmaydi. Faqat `S3_*` dan biri yo‘q bo‘lsa butun sayt 503 bo‘ladi, production’da esa beshtasi ham bor.
 
-## 3. Production SMTP (asosiy to‘siq)
+## 3. Email (SMTP) — hozircha keyinga qoldirilgan (egasining qarori, 27.11.2026)
 
-PR #3 production’da email tasdiqlashni majburiy qiladi. SMTP bo‘lmasa yangi ro‘yxatdan o‘tish “Pochta xizmati
-sozlanmagan” xatosi bilan to‘xtaydi, parol tiklash ham ishlamaydi. Resend hisobida hozir **birorta domen yo‘q**.
-`auforex.vercel.app` ga DNS yozuvi qo‘shib bo‘lmaydi, shuning uchun ikki yo‘l bor:
+Production’ga **`REQUIRE_EMAIL_VERIFICATION=false`** qo‘shiladi (tasdiq bilan, deploy bilan birga). Natija
+(Preview’da xuddi shu sozlama bilan E2E sinalgan):
 
-**A) Resend + o‘z domeningiz (tavsiya: eng yaxshi yetkazish, `no-reply@<domen>`)**
-1. Domen nomini menga yozasiz (masalan `auforex.uz`).
-2. Men Resend API orqali domenni qo‘shaman va DNS yozuvlarini beraman: SPF (TXT) va MX `send.<domen>` uchun,
-   DKIM (TXT) `resend._domainkey.<domen>` uchun.
-3. Siz ularni domen provayderida qo‘shasiz (5–10 daqiqa).
-4. Men domenni tasdiqlayman. Keyin faqat shu domendan yuborishga ruxsatli kalit yaratib, **ruxsatingiz bilan** Production’ga
-   `SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_USER=resend`, `SMTP_PASSWORD`, `MAIL_FROM` ni qo‘yaman
-   (Sensitive). Qiymatlar ko‘rsatilmaydi.
-   Resend bepul tarifi: kuniga 100, oyiga 3 000 xat.
+- ro‘yxatdan o‘tish email tasdiqlashsiz → darhol shaxsiy kabinet; kirish odatdagidek; eski hisoblar ham kiradi;
+- “Parolni unutdingizmi?” sahifasi: **“Email orqali parolni tiklash vaqtincha mavjud emas”** + Telegram havolasi
+  (forma ko‘rsatilmaydi); profilda “Tasdiqlanmagan” belgisi ko‘rsatilmaydi; emailni o‘zgartirish vaqtincha yopiq;
+- SMTP kodi o‘chirilmagan: keyinchalik `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM` qo‘shilib,
+  `REQUIRE_EMAIL_VERIFICATION` olib tashlansa (yoki `true`), tasdiqlash va parol tiklash qaytadi.
 
-**B) Gmail (domen bo‘lmasa)**
-1. Google hisobida 2 bosqichli himoyani yoqing, so‘ng `myaccount.google.com/apppasswords` da “AU Forex” uchun 16 belgili parol yarating.
-2. Vercel → Settings → Environment Variables → **faqat Production**, *Sensitive*:
-   `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER=<gmail manzil>`, `SMTP_PASSWORD=<ilova paroli>`,
-   `MAIL_FROM=AU Forex Academy <shu gmail manzil>`. Parolni o‘zingiz kiritasiz, u menga ham ko‘rinmaydi.
-   Gmail limiti: kuniga taxminan 500 xat.
+Keyin ulash variantlari: **A)** Resend + o‘z domeningiz (DNS: SPF/MX `send.<domen>`, DKIM `resend._domainkey.<domen>`;
+`SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465`, `SMTP_USER=resend`) — bepul 100 xat/kun; **B)** Gmail ilova paroli
+(`smtp.gmail.com:465`, ~500 xat/kun).
 
-**Mavjud foydalanuvchilar.** `main` da tasdiqlash o‘chiq edi, shuning uchun hozirgi hisoblarning emaili “tasdiqlanmagan”.
-Relizdan keyin ular kirganda “Email manzilingiz hali tasdiqlanmagan” va **“Tasdiqlash xatini qayta yuborish”**
-tugmasini ko‘radi (E2E sinalgan). Xat yetib bormasa: Super admin → Foydalanuvchilar → hisob →
-**“Emailni qo‘lda tasdiqlash”** (yangi, audit logga yoziladi, E2E sinalgan).
-Hamma eski hisoblarni birdan “tasdiqlangan” qilish mumkin, lekin bu production ma’lumotini o‘zgartiradi va xavfsizlik
-jihatidan yomonroq (begona email bilan ochilgan hisob ham tasdiqlanib qoladi). Faqat alohida ruxsat va zaxiradan keyin.
+Eslatma: email bo‘lmaganda parolini unutgan foydalanuvchini faqat administrator tiklay oladi — buning uchun panelda
+tugma yo‘q (qo‘shilmadi: ortiqcha funksiya qo‘shilmasin degan ko‘rsatma).
 
 ## 4. Production bazasining zaxirasi
 
@@ -121,18 +109,21 @@ jihatidan yomonroq (begona email bilan ochilgan hisob ham tasdiqlanib qoladi). F
 
 ## 6. Reliz tartibi (har bosqich alohida tasdiq bilan)
 
-1. **Zaxira** (4-bo‘lim): siz qilasiz yoki Prisma Console’da kunlik zaxira borligini tasdiqlaysiz.
-2. **SMTP** (3-bo‘lim, A yoki B): domen tasdiqlanadi/parol kiritiladi → Production’ga `SMTP_*` + `MAIL_FROM` (**tasdiq 1**).
-3. **R2 kaliti** (2-bo‘lim): Cloudflare’da token holatini tasdiqlaysiz yoki 5-qadamdagi tekshiruvni shart qilib qo‘yamiz.
-4. **Birlashtirish** (**tasdiq 2**): PR #3 Draft’dan chiqariladi va `main` ga birlashtiriladi. Vercel production build’ni o‘zi boshlaydi.
-5. **Tekshiruv** (men, darhol):
-   - `/api/health`: `status: ok`, `storage.uploads: ok`, `mail.configured: true`, `verificationRequired: true`;
-   - xavfsizlik sarlavhalari; noto‘g‘ri parolga 401, begona saytdan so‘rovga 403;
-   - bosh sahifa, darslar, kitoblar, telefon ko‘rinishi;
-   - ruxsatingiz bilan bitta sinov hisobi: ro‘yxatdan o‘tish → tasdiqlash xati → kabinet, parol tiklash.
-
-   Siz: Super admin → Tizim → “Omborni tekshirish” (5/5) va “Menga test xat yuborish”; bitta video va bitta kitob oching.
-6. Biror ✗ bo‘lsa → darhol 7-bo‘lim.
+1. **Zaxira** (4-bo‘lim): `pg_dump` yoki Prisma Console → Backups’da kunlik zaxira borligini tasdiqlash.
+2. **Production sozlamasi** (**tasdiq 1**): `REQUIRE_EMAIL_VERIFICATION=false` (faqat Production). SMTP qo‘shilmaydi.
+3. **Birlashtirish va deploy** (**tasdiq 2**): PR #3 Draft’dan chiqariladi, `main` ga birlashtiriladi, Vercel production build’ni o‘zi boshlaydi
+   (`prisma migrate deploy` → “No pending migrations”).
+4. **Tekshiruv** (men, darhol): `/api/health` → `status: ok`, `storage.uploads: ok`, `mail.configured: false`,
+   `verificationRequired: false`; xavfsizlik sarlavhalari; noto‘g‘ri parolga 401, begona saytdan so‘rovga 403; bosh sahifa,
+   darslar, kitoblar, parolni tiklash sahifasidagi xabar, telefon ko‘rinishi.
+5. **Import hisobi** (**tasdiq 3**): men production’da `content-import@example.com` hisobini ochaman (parol faqat menda,
+   hech qayerga chiqmaydi), siz uni **Super admin → Jamoa** da super admin qilasiz. Shu hisob bilan:
+   - **Tizim → “Omborni tekshirish”** — production R2 kalitlari haqiqiy yozish/o‘qish/o‘chirish bilan tekshiriladi (5/5);
+   - Kitoblar → **“Fayllarni tekshirish”** (“Trading Noldan” muqovasi).
+6. **Kontent** (**tasdiq 4**): ZIP → `PLAN.md` (kategoriyalar, tartib, Bepul/PRO) → siz tasdiqlaysiz → `prepare` → `import`
+   → `verify` (har dars bitta, video 206) → siz saytda ko‘rasiz → **tasdiq 5** → `publish` (kurslar nashr qilinadi).
+7. Ish tugagach import hisobi super admin’dan chiqariladi va bloklanadi (Super admin → Foydalanuvchilar).
+8. Biror ✗ bo‘lsa → darhol 7-bo‘lim.
 
 ## 7. Orqaga qaytarish (1 daqiqa)
 
@@ -143,17 +134,17 @@ jihatidan yomonroq (begona email bilan ochilgan hisob ham tasdiqlanib qoladi). F
 2. **Baza:** migratsiya yo‘q, sxema bir xil, shuning uchun eski versiya yangi versiya yozgan ma’lumot bilan ishlayveradi. Bazani tiklash kerak emas.
    Ma’lumot buzilgan holatdagina zaxira **yangi** bazaga tiklanadi (`pg_restore --no-owner -d "<yangi baza URL>" fayl.dump`)
    va `DATABASE_URL` almashtiriladi. Jonli baza ustiga hech qachon tiklanmaydi.
-3. **O‘zgaruvchilar:** qo‘shilgan `SMTP_*` qolishi mumkin (`main` ham SMTP bilan ishlaydi, unda tasdiqlash yoqiladi) yoki o‘chiriladi.
+3. **O‘zgaruvchilar:** `REQUIRE_EMAIL_VERIFICATION=false` qolishi mumkin (`main` SMTP’siz baribir tasdiqlashni o‘chiradi).
 4. **Kod:** `git revert -m 1 <merge commit>` → PR → `main`.
 
 ## 8. Videolarni ommaviy import qilish (production’ga — faqat kontent tasdiqlangandan keyin)
 
-Tayyor: `npm run videos:import -- "<papka>" --to r2`. Avval **faqat reja** ko‘rsatiladi: baza barmoq izi, bucket nomi,
-kurslar, darslar, hajm, o‘tkazib yuboriladigan formatlar. `--yes` qo‘shilgandagina yuklanadi. Yangi kurslar nashr qilinmagan
-holda yaratiladi. `.env.import` (kompyuteringizda, hech kimga bermang) uchun kerak:
+Asosiy yo‘l: **`npm run content:import`** (ZIP → reja → Super admin panel orqali yuklash). Production bazasi yoki R2
+kalitlari kerak emas: video saytning o‘z kalitlari bilan R2’ga, ma’lumot saytning o‘z formalaridan bazaga yoziladi.
+Takror darslar yaratilmaydi (bir xil fayl, shu kursdagi shu nom yoki raqam o‘tkazib yuboriladi). Preview’da sinalgan:
+batafsil [VIDEO-DARSLAR.md → ZIP arxivdan saytga](VIDEO-DARSLAR.md).
 
-- `DATABASE_URL`: production bazasi (Vercel → Storage → `.env.local`);
-- `S3_ENDPOINT`, `S3_BUCKET=auforex-media`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`: production R2 tokeni.
+Muqobil: `npm run videos:import -- "<papka>" --to r2` — sizning kompyuteringizdan, `.env.import` da production
+`DATABASE_URL` va R2 kalitlari bilan (reja baza barmoq izi va bucket nomini ko‘rsatadi, `--yes` bilan yuklaydi).
 
-Reja chiqqanda barmoq izi production build logidagi “Baza barmoq izi” bilan bir xil bo‘lsin. Batafsil:
-[VIDEO-DARSLAR.md](VIDEO-DARSLAR.md). Production’ga import faqat siz kontentni berib, tasdiqlaganingizdan keyin bo‘ladi.
+Production’ga import faqat siz ZIP’ni berib, rejani tasdiqlaganingizdan keyin bo‘ladi.

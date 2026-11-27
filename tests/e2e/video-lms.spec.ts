@@ -311,6 +311,8 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("go-to-blocker").click();
     await page.waitForURL(freeLessonUrl);
     await page.getByTestId("mark-complete").click();
+    // Wait until the completion is saved (the next-lesson link is shown before that, still locked).
+    await expect(page.getByTestId("lesson-status")).toHaveText("Dars yakunlangan");
     await expect(page.getByTestId("next-lesson")).toContainText(PRO_LESSON);
     await page.goto(proLessonUrl);
     await expect(page.getByTestId("lesson-heading")).toHaveText(`${CATEGORY} — 5-dars`, { ignoreCase: true });

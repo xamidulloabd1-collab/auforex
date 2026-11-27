@@ -34,3 +34,6 @@ next-env.d.ts
 .vercel
 .env*.local
 backups/
+
+# video import working folder (archives, videos, plan, ledger)
+/content-import

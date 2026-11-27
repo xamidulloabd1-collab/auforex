@@ -57,6 +57,46 @@ Sarlavha talabaga **“Texnik tahlil — 5-dars”** ko‘rinishida chiqadi (for
 - Bunny videosi o‘rnida 403: `BUNNY_STREAM_TOKEN_KEY` Bunny’dagi **Token authentication key**ga mos emas yoki Redeploy qilinmagan.
 - “Bu kursda N-dars allaqachon bor”: boshqa raqam tanlang yoki ro‘yxatda ↑/↓ bilan tartibni o‘zgartiring.
 
+## ZIP arxivdan saytga (Super admin panel orqali)
+
+`npm run content:import` arxivdagi videolarni **Super admin panelining o‘zi orqali** joylaydi: kategoriya, kurs
+va darslar odatdagi formalar bilan yaratiladi, video saytning R2 omboriga to‘g‘ridan-to‘g‘ri (bo‘laklab) yuklanadi.
+Kompyuterda baza yoki ombor kalitlari kerak emas — faqat super admin hisobi. ffmpeg, python3 va
+Playwright Chromium (`npx playwright install chromium`) kerak.
+
+Arxiv tuzilishi (bitta umumiy papka bo‘lsa, ochib olinadi):
+
+```
+<Kategoriya>/<01 - Dars nomi>.mp4            → kurs = kategoriya nomi
+<Kategoriya>/<Kurs>/<01 - Dars nomi>.mp4     → kategoriya ichida alohida kurs
+```
+
+Tartib nomlardagi raqamdan olinadi: `01 - …`, `1-dars …`, `Dars 3 …` (10-dars 9-darsdan keyin keladi).
+Raqam bo‘lmasa yoki takrorlansa, alifbo tartibida 1, 2, 3… beriladi.
+
+1. **Reja** (hech narsa yuklanmaydi):
+   ```bash
+   npm run content:import -- plan darslar.zip --free 1
+   ```
+   `content-import/PLAN.md`: kategoriyalar, kurslar, dars raqamlari va nomlari, davomiyligi, hajmi, Bepul/PRO va har
+   fayl uchun holat. `--free 1` har kursning 1-darsini bepul qiladi (standart: hammasi PRO).
+   Holatlar: **upload** (tayyor MP4/WebM) · **remux** (MOV yoki indeksi oxirida — sifat o‘zgarmaydi) ·
+   **transcode** (HEVC, 10-bit va h.k. — brauzer o‘ynatmaydi, qayta kodlash kerak) · **skip** (o‘qilmaydi yoki
+   mazmuni boshqa fayl bilan **bir xil** — takror dars yaratilmaydi). 2 GB dan katta fayllar ham siqiladi.
+   Nomlar va Bepul/PRO ni `content-import/plan.json` da tahrirlash mumkin.
+2. **Tayyorlash:** `npm run content:import -- prepare` (qayta kodlash faqat `--allow-transcode` bilan).
+3. **Yuklash:**
+   ```bash
+   IMPORT_ADMIN_EMAIL=… IMPORT_ADMIN_PASSWORD=… npm run content:import -- import --site https://auforex.vercel.app
+   ```
+   Kurslar **nashr qilinmagan** holda yaratiladi. Qayta ishga tushirish xavfsiz: saytda bor darslar (shu kursda
+   shu nom yoki raqam) o‘tkazib yuboriladi, natija `content-import/ledger.json` da saqlanadi.
+4. **Tekshirish:** `… -- verify --site …` — har dars saytda bitta, videosi ombordan ochiladi (206).
+5. **Nashr:** tekshirib, tasdiqlagandan keyin `… -- publish --site …`.
+
+Sinov (Preview, 27.11.2026): arxiv → 2 kategoriya, 5 dars (takror fayl o‘tkazib yuborildi, MOV va indeks oxirida →
+remux, HEVC → H.264). Ikkinchi ishga tushirishda 0 ta yangi dars. Tezlik: 116 MB video 26,7 MB/s.
+
 ## Ko‘p videoni bir buyruq bilan qo‘shish (o‘z kompyuteringizda)
 
 `npm run videos:import` papkadagi videolarni yuklaydi va saytga kurs/dars qilib, tartib bilan qo‘shadi. Ikki manzil bor:
