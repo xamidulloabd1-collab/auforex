@@ -99,3 +99,23 @@ describe("AWS Signature V4", () => {
     await expect(client.head("founder/portrait.png")).resolves.toBeNull();
   });
 });
+
+describe("AWS Signature V4 with temporary credentials", () => {
+  const temp = { ...config, sessionToken: "temporary-session-token-abc" };
+  it("signs the X-Amz-Security-Token header; changing the token changes the signature", () => {
+    const h = signHeaders(temp, "GET", "https://examplebucket.s3.amazonaws.com/test.txt", { payloadHash: EMPTY, now });
+    expect((h as Record<string, string>)["x-amz-security-token"]).toBe("temporary-session-token-abc");
+    expect(h.authorization).toMatch(/SignedHeaders=[^,]*x-amz-security-token/);
+    const other = signHeaders({ ...temp, sessionToken: "another-session-token" }, "GET", "https://examplebucket.s3.amazonaws.com/test.txt", { payloadHash: EMPTY, now });
+    expect(sig(other.authorization)).not.toBe(sig(h.authorization));
+  });
+
+  it("puts the session token into presigned URLs (signed), and not for permanent keys", () => {
+    const url = new URL(presignUrl(temp, "PUT", "https://examplebucket.s3.amazonaws.com/a.mp4", { expiresSeconds: 60, now }));
+    expect(url.searchParams.get("X-Amz-Security-Token")).toBe("temporary-session-token-abc");
+    const other = new URL(presignUrl({ ...temp, sessionToken: "another-session-token" }, "PUT", "https://examplebucket.s3.amazonaws.com/a.mp4", { expiresSeconds: 60, now }));
+    expect(other.searchParams.get("X-Amz-Signature")).not.toBe(url.searchParams.get("X-Amz-Signature"));
+    const plain = new URL(presignUrl(config, "PUT", "https://examplebucket.s3.amazonaws.com/a.mp4", { expiresSeconds: 60, now }));
+    expect(plain.searchParams.has("X-Amz-Security-Token")).toBe(false);
+  });
+});

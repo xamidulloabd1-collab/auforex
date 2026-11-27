@@ -14,7 +14,11 @@ export type S3Config = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /** Temporary credentials only (R2 Temporary Credentials API, AWS STS): sent as X-Amz-Security-Token. */
+  sessionToken?: string;
 };
+
+type SigningConfig = Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey" | "sessionToken">;
 
 const sha256Hex = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 const hmac = (key: string | Buffer, data: string) => createHmac("sha256", key).update(data).digest();
@@ -51,7 +55,7 @@ type SignInput = {
   query: Record<string, string>;
   payloadHash: string;
   date: string; // amzDate
-  config: Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey">;
+  config: SigningConfig;
 };
 
 function signature({ method, url, headers, query, payloadHash, date, config }: SignInput) {
@@ -76,7 +80,7 @@ function signature({ method, url, headers, query, payloadHash, date, config }: S
 
 /** Presigned URL (query-string authentication). `headers` are headers the client must send exactly. */
 export function presignUrl(
-  config: S3Config | Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey">,
+  config: S3Config | SigningConfig,
   method: string,
   rawUrl: string,
   opts: { expiresSeconds: number; query?: Record<string, string>; headers?: Record<string, string>; now?: Date },
@@ -95,6 +99,8 @@ export function presignUrl(
     "X-Amz-Date": date,
     "X-Amz-Expires": String(Math.max(1, Math.min(604800, Math.floor(opts.expiresSeconds)))),
     "X-Amz-SignedHeaders": signedHeaders,
+    // Temporary credentials: the session token is part of the signed query.
+    ...(config.sessionToken ? { "X-Amz-Security-Token": config.sessionToken } : {}),
   };
   const { sig } = signature({ method, url, headers, query, payloadHash: "UNSIGNED-PAYLOAD", date, config });
   return `${url.origin}${url.pathname}?${canonicalQuery(query)}&X-Amz-Signature=${sig}`;
@@ -102,7 +108,7 @@ export function presignUrl(
 
 /** Authorization-header signing for server-side requests. */
 export function signHeaders(
-  config: Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey">,
+  config: SigningConfig,
   method: string,
   rawUrl: string,
   opts: { headers?: Record<string, string>; payloadHash: string; now?: Date },
@@ -115,6 +121,7 @@ export function signHeaders(
     host: url.host,
     "x-amz-content-sha256": opts.payloadHash,
     "x-amz-date": date,
+    ...(config.sessionToken ? { "x-amz-security-token": config.sessionToken } : {}),
     ...(opts.headers ?? {}),
   };
   const { sig, scope, signedHeaders } = signature({ method, url, headers, query, payloadHash: opts.payloadHash, date, config });

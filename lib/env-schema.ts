@@ -30,6 +30,8 @@ export const serverEnvSchema = z.object({
   S3_BUCKET: z.string().min(3).optional(),
   S3_ACCESS_KEY_ID: z.string().min(8).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(16).optional(),
+  /** Only for temporary S3 credentials (e.g. R2 Temporary Credentials API on a Preview). */
+  S3_SESSION_TOKEN: z.string().min(16).optional(),
   /** Bunny Stream → Library → Security → "Token authentication key" (signs lesson video links). */
   BUNNY_STREAM_TOKEN_KEY: z.string().min(16, "BUNNY_STREAM_TOKEN_KEY juda qisqa").optional(),
   STORAGE_LOCAL_ROOT: z.string().default("./storage"),

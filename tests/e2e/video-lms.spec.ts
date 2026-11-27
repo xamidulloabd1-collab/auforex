@@ -208,7 +208,9 @@ test.describe.serial("Video LMS", () => {
     await expect(page.getByText("Yuklash bekor qilindi")).toHaveCount(0, { timeout: 15_000 });
 
     // 2) Cancelled while the data is being sent. Slow the transport down so there is time to press "Bekor qilish".
-    const transport = S3 ? /127\.0\.0\.1:5055\// : /\/api\/admin\/upload\?/;
+    // The bucket's S3 host (E2E_S3_HOST, e.g. <account>.r2.cloudflarestorage.com); the local emulator by default.
+    const s3Host = (process.env.E2E_S3_HOST ?? "127.0.0.1:5055").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const transport = S3 ? new RegExp(`${s3Host}/`) : /\/api\/admin\/upload\?/;
     await page.route(transport, async (route) => {
       if (route.request().method() === "PUT") await new Promise((r) => setTimeout(r, 4000));
       await route.continue().catch(() => {});

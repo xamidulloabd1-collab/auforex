@@ -65,3 +65,12 @@ describe("S3 / R2 settings", () => {
     expect(isValidBucketName("192.168.1.1")).toBe(false);
   });
 });
+
+describe("temporary S3 credentials (session token)", () => {
+  it("is read from S3_SESSION_TOKEN and omitted for permanent keys", () => {
+    const r = parseS3Config({ ...base, S3_SESSION_TOKEN: " session-token-value-123 " });
+    expect(r.ok && r.config?.sessionToken).toBe("session-token-value-123");
+    const permanent = parseS3Config(base);
+    expect(permanent.ok && permanent.config && "sessionToken" in permanent.config).toBe(false);
+  });
+});

@@ -77,6 +77,8 @@ export function parseS3Config(source: Record<string, string | undefined> = proce
       accessKeyId,
       secretAccessKey,
       region: source.S3_REGION?.trim() || "auto",
+      // Only with temporary credentials (R2 Temporary Credentials API); permanent keys have none.
+      ...(source.S3_SESSION_TOKEN?.trim() ? { sessionToken: source.S3_SESSION_TOKEN.trim() } : {}),
     },
   };
 }
