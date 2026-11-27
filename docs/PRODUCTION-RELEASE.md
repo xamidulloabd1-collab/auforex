@@ -35,6 +35,15 @@ production bucket’i, production sozlamalari va deploy’i o‘zgartirilmadi. M
 | Kalitlar turi | `S3_SESSION_TOKEN` yo‘q → R2 API tokenidan olingan **doimiy** kalitlar (token muddati “Forever” bo‘lsa va bekor qilinmasa ishlayveradi) |
 | Kalitlar yaroqliligi | ⚠️ **Bu yerdan tasdiqlab bo‘lmaydi**: qiymatlar Sensitive (API ham qaytarmaydi), Cloudflare tokenining tokenlar ro‘yxatini o‘qishga huquqi yo‘q (403). Production’ning `/api/health` (`main`) kalitni sinamaydi |
 
+**Jonli saytda topilgan holat (faqat o‘qish):**
+- `https://auforex.vercel.app/api/health` → `status: ok`, 4 migratsiya, `database.pooled: true`, `storage.driver: s3`.
+  Bu kalitlar **borligini** bildiradi, ishlashini emas.
+- **Production bucket bo‘sh (0 ta fayl).** Bosh sahifadagi “Trading Noldan” kitobining muqovasi
+  (`covers/f6be…webp`) bazada bor, lekin bucket’da yo‘q, shuning uchun jonli saytda rasm **404**.
+  Ehtimoliy sabab: `main` dagi R2 HEAD xatosi (`Content-Length` yo‘qoladi → hajm 0 → yuklash rad etiladi/o‘chiriladi).
+  PR #3 da bu tuzatilgan (`b0dd5d7`). Relizdan keyin: Super admin → Kitoblar → **“Fayllarni tekshirish”** → topilmagan
+  muqova/PDF’larni qayta yuklang (Darslardagi videolar ham shunday tekshiriladi: dars sahifasida video o‘ynashi kerak).
+
 **Kalitlarni tasdiqlash (biri yetarli):**
 1. Cloudflare → R2 → **Manage API Tokens** → production uchun yaratilgan token: *Active*, *Object Read & Write*,
    bucket `auforex-media`, TTL *Forever* (1 daqiqa).
@@ -106,6 +115,7 @@ jihatidan yomonroq (begona email bilan ochilgan hisob ham tasdiqlanib qoladi). F
 | Sarlavhalar | ✅ CSP (nonce), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP |
 | Fayllar | ✅ private bucket, 3 soatlik imzolangan havolalar, CORS faqat sayt manziliga, fayl turi mazmunidan tekshiriladi |
 | Preview ↔ production bazasi | ⚠️ boshqa branch Preview’lari production bazasiga ulanadi (1-bo‘lim) |
+| Birinchi so‘rov kechikishi | ⚠️ uzoq turib qolgandan keyingi birinchi so‘rov 16–30+ s (Preview’da yangi deploydan keyin ro‘yxatdan o‘tish 30 s dan oshdi, production `/api/health` birinchi marta 30 s da javob bermadi, keyin 0,1–0,6 s). Funksiya + baza “sovuq start”i. Tavsiya: baza regionini funksiyalar regioni (`iad1`) bilan moslash, kerak bo‘lsa har 5 daqiqada `/api/health` ni chaqiradigan monitoring (masalan UptimeRobot) |
 | `TRUSTED_ORIGINS` (production) | ℹ️ qiymati yashirin. Unda faqat o‘z manzillaringiz borligini Vercel’da tekshiring |
 | Vercel API tokeni | ℹ️ 7 kunlik, faqat shu jamoa uchun. Relizdan keyin Vercel → Account → Tokens da o‘chiring |
 
