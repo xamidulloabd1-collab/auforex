@@ -37,3 +37,7 @@ backups/
 
 # video import working folder (archives, videos, plan, ledger)
 /content-import
+
+# database backups (personal data) and their connection settings
+/backups
+.env.backup

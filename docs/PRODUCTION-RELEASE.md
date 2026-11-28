@@ -72,25 +72,39 @@ Keyin ulash variantlari: **A)** Resend + o‘z domeningiz (DNS: SPF/MX `send.<do
 Eslatma: email bo‘lmaganda parolini unutgan foydalanuvchini faqat administrator tiklay oladi — buning uchun panelda
 tugma yo‘q (qo‘shilmadi: ortiqcha funksiya qo‘shilmasin degan ko‘rsatma).
 
-## 4. Production bazasining zaxirasi
+## 4. Production bazasining zaxirasi (28.11.2026 tekshiruvi)
 
-- Production baza: Vercel orqali ulangan Prisma Postgres (o‘zgaruvchilar 21.11.2026 da yaratilgan). U menga ko‘rinadigan
-  Prisma workspace’da emas, shuning uchun avtomatik zaxiralarini bu yerdan tekshirib bo‘lmadi.
-- Ko‘rinadigan workspace bepul tarifda: test bazasida `backupRetentionDays: 0`, ya’ni **avtomatik zaxira yo‘q**.
-  Production uchun ham shunday deb hisoblang, toki boshqasi tasdiqlanmaguncha.
-- **Birlashtirishdan oldin qo‘lda zaxira shart.** Kompyuteringizda Docker bilan:
+**Holat:**
+- Production bazasi — Vercel integratsiyasi orqali yaratilgan Prisma Postgres (o‘zgaruvchilar 21.11.2026). U Vercel
+  boshqaradigan alohida Prisma workspace’da. Mening tokenim faqat “Personal workspace”ni (test bazasi) ko‘radi, Vercel
+  tokeni esa Storage’ga kira olmaydi. Shuning uchun production zaxiralari bu yerdan **tekshirib bo‘lmadi**.
+- Prisma hujjati: avtomatik kunlik zaxira (snapshot) faqat **Starter/Pro (7 kun) va Business (30 kun)** tariflarida.
+  **Free** tarifda zaxira yo‘q. Ko‘rinadigan workspace Free (`backupRetentionDays: 0`). Production workspace ham
+  Free bo‘lsa, **hozir zaxira umuman yo‘q** deb hisoblang.
+- Bu muhitdan `db.prisma.io:5432` ga ulanib bo‘lmaydi (faqat HTTPS), demak `pg_dump` ni men bu yerda bajara olmayman.
 
-  ```bash
-  # Vercel → Storage → bazangiz → .env.local yorlig‘idagi DATABASE_URL (db.prisma.io bilan, pooled emas)
-  docker run --rm postgres:18 pg_dump -Fc "postgres://…@db.prisma.io:5432/postgres?sslmode=require" > auforex-prod-2026-11-27.dump
-  docker run --rm -v "%cd%:/b" postgres:18 pg_restore --list /b/auforex-prod-2026-11-27.dump
-  ```
+**Zaxira yaratish — xavfsiz usullar (production’ga yozilmaydi, ma’lumot o‘chirilmaydi):**
 
-  Ikkinchi buyruq jadvallar ro‘yxatini chiqarsa (`TABLE DATA public user` va boshqalar), zaxira yaroqli.
-  Faylda shaxsiy ma’lumotlar va parol xeshlari bor: uni shifrlangan joyda saqlang, hech kimga yubormang.
-- Yoki: Vercel → Storage → baza → **Open in Prisma Console → Backups**. U yerda kunlik zaxiralar ko‘rinsa, qo‘lda zaxira ixtiyoriy.
-- PR #3 da **migratsiya yo‘q** (4 ta migratsiya production’da allaqachon qo‘llangan). Production build’dagi
-  `prisma migrate deploy` “No pending migrations” deb tugaydi va bazaga tegmaydi.
+1. **`npm run db:backup` (tavsiya, bepul, o‘z kompyuteringizda).** Bazadan faqat o‘qiydi: jadvallarni sanaydi, `pg_dump`
+   (izchil snapshot) qiladi, keyin faylni **vaqtinchalik** PostgreSQL’ga to‘liq tiklab, har jadvaldagi qatorlar
+   sonini solishtiradi. Natija: `backups/auforex-<barmoq izi>-<vaqt>.dump` + `.json` hisobot (SHA-256 bilan).
+   Barmoq izi production uchun `85bcf18c856b` bo‘lishi kerak. Test bazasida sinaldi: 24/24 jadval mos.
+   Talab: Docker Desktop (`postgres:17` image avtomatik olinadi) **yoki** PostgreSQL 17 o‘rnatilgan (pg_dump,
+   pg_restore, psql va lokal server, `RESTORE_TEST_URL`). Windows (PowerShell):
+   ```powershell
+   # Vercel → Storage → bazangiz → .env.local yorlig‘idagi DIRECT manzil (db.prisma.io, pooled emas)
+   Set-Content .env.backup 'BACKUP_DATABASE_URL="postgres://…@db.prisma.io:5432/postgres?sslmode=require"'
+   npm run db:backup
+   ```
+   Fayl va `.env.backup` repoga tushmaydi (`.gitignore`). Faylda shaxsiy ma’lumotlar va parol xeshlari bor:
+   shifrlangan arxivda (masalan 7-Zip AES-256) va internetga ulanmagan joyda saqlang; `.env.backup` ni o‘chiring.
+2. **Prisma avtomatik zaxiralari (pullik tarif).** Vercel → Storage → baza → **Open in Prisma Console** → workspace
+   Settings → Billing: tarifni ko‘ring. Starter’ga o‘tilsa, kunlik snapshot’lar paydo bo‘ladi (faqat faollik bo‘lgan
+   kunlari). Tiklanishini tekshirish: **Backups → Restore backup → Restore to a new database** (asl bazaga tegmaydi);
+   nusxa Vercel’da ko‘rinmaydi, keyin `npx prisma postgres delete <id>` bilan o‘chiriladi. **“Restore to an existing
+   database” ni ishlatmang** — u jonli bazani ustidan yozadi.
+
+Deploy’dan oldin kamida 1-usul ✓ bo‘lishi shart (hisobotda “Zaxira yaroqli”).
 
 ## 5. Xavfsizlik ko‘rigi
 
@@ -110,9 +124,16 @@ tugma yo‘q (qo‘shilmadi: ortiqcha funksiya qo‘shilmasin degan ko‘rsatma)
 ## 6. Reliz tartibi (har bosqich alohida tasdiq bilan)
 
 1. **Zaxira** (4-bo‘lim): `pg_dump` yoki Prisma Console → Backups’da kunlik zaxira borligini tasdiqlash.
-2. **Production sozlamasi** (**tasdiq 1**): `REQUIRE_EMAIL_VERIFICATION=false` (faqat Production). SMTP qo‘shilmaydi.
-3. **Birlashtirish va deploy** (**tasdiq 2**): PR #3 Draft’dan chiqariladi, `main` ga birlashtiriladi, Vercel production build’ni o‘zi boshlaydi
-   (`prisma migrate deploy` → “No pending migrations”).
+2. **Production sozlamasi** (**tasdiq 1 — berildi, 28.11 bajarildi**): `REQUIRE_EMAIL_VERIFICATION=false` (faqat Production,
+   keyingi deploy’dan kuchga kiradi). SMTP qo‘shilmaydi.
+3. **Birlashtirish va deploy** (**tasdiq 2**). Eng xavfsiz yo‘l — **ikki bosqichli**: Vercel → Settings → Environments →
+   Production’da “Auto-assign custom production domains” vaqtincha o‘chiriladi; PR #3 `main` ga birlashtiriladi; yangi
+   production deploy production sozlamalari bilan quriladi, lekin `auforex.vercel.app` **eski versiyada qoladi**.
+   Men deploy’ning o‘z manzilida tekshiraman (health, kirish, **Tizim → Omborni tekshirish** — production R2 kalitlari
+   shu yerda haqiqiy yozish/o‘qish bilan tasdiqlanadi). Hammasi ✓ bo‘lsa → **Promote to Production** (bir lahzada),
+   ✗ bo‘lsa sayt umuman o‘zgarmaydi. Build: `prisma migrate deploy` → “No pending migrations”.
+   (Sozlama `auforex.vercel.app` ni ham ushlab turishini o‘chirishdan oldin tekshiramiz; aks holda xuddi shu ishni
+   `vercel deploy --prod --skip-domain` qiladi.)
 4. **Tekshiruv** (men, darhol): `/api/health` → `status: ok`, `storage.uploads: ok`, `mail.configured: false`,
    `verificationRequired: false`; xavfsizlik sarlavhalari; noto‘g‘ri parolga 401, begona saytdan so‘rovga 403; bosh sahifa,
    darslar, kitoblar, parolni tiklash sahifasidagi xabar, telefon ko‘rinishi.
