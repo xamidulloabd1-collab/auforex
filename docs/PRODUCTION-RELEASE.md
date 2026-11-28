@@ -1,5 +1,9 @@
 # Production reliz: holat, to‘siqlar va reja (27.11.2026)
 
+> **Chiqarildi: 28.11.2026** — `main` = `d02a302`, Production `dpl_Gje78tVkafJDYpnLF6QAjquG3kMX` (S3_BUCKET tuzatilgandan keyin).
+> Natijalar: [TEST_RESULTS.md](TEST_RESULTS.md). Keyingi reliz uchun orqaga qaytarish nuqtasi — shu deploy.
+> Eski `dpl_5kiP8bxeumX7yJgCytGZqqfnFwmL` ga qaytilsa, R2 yana ishlamaydi (u noto‘g‘ri `auforec-media` bilan qurilgan).
+
 PR #3 (`claude/final-stabilization`) ni `https://auforex.vercel.app` ga chiqarishdan oldingi tekshiruv.
 Hamma tekshiruvlar **faqat o‘qish** rejimida bajarildi (Vercel, Cloudflare, Prisma, Resend API). Production bazasi,
 production bucket’i, production sozlamalari va deploy’i o‘zgartirilmadi. Maxfiy qiymatlar o‘qilmadi va chiqarilmadi.

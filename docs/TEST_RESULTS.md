@@ -1,3 +1,20 @@
+# Production release — 28 November 2026
+
+PR #3 merged into `main` (`d02a302`) with the owner's approval. Owner decisions: no fresh database backup
+(risk accepted — no migrations, instant rollback); content rights and consent for lessons 1–3 confirmed.
+
+| Step | Result |
+|---|---|
+| Production build `dpl_5fk3QZQ8sCriAn16KxkMRGXQcy8x` | ✅ `prisma migrate deploy`: “No pending migrations to apply” (schema and data untouched) |
+| Live checks | ✅ `/api/health` ok (`mail.configured: false`, `verificationRequired: false`), all pages, security headers, wrong password 401, cross-site 403, password-reset notice |
+| R2 | ✗ → ✅ The Tizim storage check found `S3_BUCKET` = `auforec-media` (typo; no such bucket) — the reason Production uploads never worked. The owner set it to `auforex-media` and redeployed (`dpl_Gje78tVkafJDYpnLF6QAjquG3kMX`): 5/5 (keys write/read, delete, CORS for the site, `ETag`, multipart) |
+| Lessons 1–3 | ✅ imported through the Super admin panel (14–18 MB/s), 1-dars Bepul, 2–3 PRO, covers and descriptions; verify: each once, video 206; re-run 0 new; course published |
+| Books | ✅ “Fayllarni tekshirish”: 3 book PDFs relinked to the bundled files (they were never in R2); “Trading Noldan” cover shows again |
+| Student / admin / phone | ✅ registration without email, login, catalog with covers, lesson 1 plays (1280×720, audio decoded, seek), progress saved + resume, lesson 2 closed for FREE (PRO offer, video API 403), guest 401, all Super admin pages 200, lessons 2–3 play as admin, phone 390 px without horizontal scroll |
+| Clean-up | ✅ temporary import admin: role removed and blocked by the owner (login refused, admin API 401); test student blocked (no data deleted) |
+
+---
+
 # Deployed Vercel Preview — 27 November 2026 (branch `claude/final-stabilization`)
 
 Preview: `auforex-git-claude-final-st-eddf8f-hamidullos-projects-d86a2122.vercel.app` (Vercel Authentication on;
