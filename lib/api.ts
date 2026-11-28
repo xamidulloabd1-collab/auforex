@@ -35,7 +35,9 @@ export function handleRouteError(err: unknown) {
         ? "S3 kalitlari noto‘g‘ri yoki ruxsat yetarli emas"
         : err.code === "NoSuchBucket"
           ? "S3_BUCKET nomi noto‘g‘ri"
-          : `S3: ${err.code}`;
+          : err.code === "Timeout" || err.code === "NetworkError" || err.status >= 500
+            ? "ombor vaqtincha javob bermadi — birozdan so‘ng qayta urinib ko‘ring"
+            : `S3: ${err.code}`;
     return jsonError(502, `Fayl omboriga ulanishda xato (${hint}).`);
   }
   console.error("[api] unexpected error", err);

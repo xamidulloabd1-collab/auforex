@@ -1,6 +1,9 @@
 /**
- * Uploads a folder of lesson videos to Bunny Stream and adds them to the site as lessons — in order.
- * Run it on YOUR computer (the videos stay on your disk until they go straight to Bunny).
+ * Uploads a folder of lesson videos and adds them to the site as lessons — in order. Destination:
+ *   --to r2     the site's own object storage (Cloudflare R2 / S3, the same bucket the admin panel uploads to);
+ *   --to bunny  Bunny Stream (lessons become Bunny embeds).
+ * Without --to: Bunny when BUNNY_* is set, otherwise R2 when S3_* is set.
+ * Run it on YOUR computer (the videos go straight from your disk to the storage).
  *
  *   npm run videos:import -- "D:\AU Forex darslar"          # plan only: shows what would be added
  *   npm run videos:import -- "D:\AU Forex darslar" --yes    # uploads and adds the lessons
@@ -15,8 +18,9 @@
  *
  * Settings (in a file named .env.import next to package.json — never share it):
  *   DATABASE_URL       the site's database (Vercel → Storage → your database → .env.local tab)
- *   BUNNY_LIBRARY_ID   Bunny → Stream → your library → API → "Video Library ID"
- *   BUNNY_API_KEY      same page → "API Key" (not the token authentication key)
+ *   R2: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY (same values as on Vercel; docs/FAYL-SAQLASH.md)
+ *   Bunny: BUNNY_LIBRARY_ID (Stream → library → API → "Video Library ID") and BUNNY_API_KEY ("API Key")
+ * R2 accepts MP4 (H.264/AAC) and WebM — the formats browsers play; convert other files first.
  *
  * Safe to run again: lessons that already exist (same title in the same course) are skipped,
  * so an interrupted upload continues where it stopped. New courses are created UNPUBLISHED —
@@ -29,6 +33,11 @@ import { Readable } from "node:stream";
 import { parseArgs } from "node:util";
 import { createScriptPrisma, type ScriptPrisma } from "../prisma/seed-helpers";
 import { slugify } from "../lib/utils";
+import { parseS3Config } from "../lib/storage/config";
+import { detectFileType } from "../lib/storage/file-types";
+import { newStorageKey } from "../lib/storage/keys";
+import { S3Client } from "../lib/storage/s3";
+import { databaseFingerprint } from "./lib/db-identity.mjs";
 
 export const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi"]);
 
@@ -171,6 +180,107 @@ async function uploadToBunny(b: Bunny, guid: string, file: string, size: number,
   if (!res.ok) throw new Error(`Bunny yuklash: ${res.status} ${text.slice(0, 200)}`);
 }
 
+/* ------------------------------------------------------------------ R2 / S3 (the site's own storage) */
+
+/** Formats a browser plays, as the admin panel accepts them; anything else must be converted first. */
+export const R2_VIDEO_TYPES: Record<string, { mime: "video/mp4" | "video/webm"; ext: "mp4" | "webm" }> = {
+  ".mp4": { mime: "video/mp4", ext: "mp4" },
+  ".m4v": { mime: "video/mp4", ext: "mp4" },
+  ".webm": { mime: "video/webm", ext: "webm" },
+};
+
+/** Same part size as the admin panel (R2 needs equal parts of at least 5 MiB, except the last). */
+export const IMPORT_PART_SIZE = 10 * 1024 * 1024;
+const PARALLEL_PARTS = 4;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The real type from the first bytes (the extension is never trusted); null when not MP4/WebM. */
+export async function sniffVideo(file: string) {
+  const fh = await open(file, "r");
+  try {
+    const head = Buffer.alloc(64);
+    const { bytesRead } = await fh.read(head, 0, 64, 0);
+    const detected = detectFileType(head.subarray(0, bytesRead));
+    return detected && (detected.mime === "video/mp4" || detected.mime === "video/webm") ? detected : null;
+  } finally {
+    await fh.close();
+  }
+}
+
+/** PUT one part through a presigned URL, retrying network errors, 5xx and 429; returns its ETag. */
+async function putPart(url: string, body: Buffer, label: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, { method: "PUT", body: new Uint8Array(body) });
+      if (res.ok) {
+        const etag = res.headers.get("etag");
+        if (!etag) throw Object.assign(new Error(`${label}: ombor ETag qaytarmadi`), { final: true });
+        return etag;
+      }
+      const text = await res.text().catch(() => "");
+      if (res.status < 500 && res.status !== 429) throw Object.assign(new Error(`${label}: ${res.status} ${text.slice(0, 160)}`), { final: true });
+      if (attempt >= 4) throw new Error(`${label}: ombor javob bermadi (${res.status})`);
+    } catch (err) {
+      if ((err as { final?: boolean }).final || attempt >= 4) throw err;
+    }
+    await sleep(1000 * 2 ** (attempt - 1));
+  }
+}
+
+/** Uploads one video into the bucket under a new private key (multipart above 10 MiB) and returns the key. */
+export async function uploadToS3(s3: S3Client, file: string, size: number, type: { mime: string; ext: "mp4" | "webm" }, onProgress: (sent: number) => void) {
+  const key = newStorageKey("videos", type.ext);
+  if (size <= IMPORT_PART_SIZE) {
+    const fh = await open(file, "r");
+    try {
+      const data = Buffer.alloc(size);
+      await fh.read(data, 0, size, 0);
+      await s3.put(key, data, type.mime);
+    } finally {
+      await fh.close();
+    }
+    onProgress(size);
+    return key;
+  }
+  const uploadId = await s3.createMultipartUpload(key, type.mime);
+  const parts = Math.ceil(size / IMPORT_PART_SIZE);
+  const etags: string[] = new Array(parts);
+  const sent = new Array<number>(parts).fill(0);
+  const fh = await open(file, "r");
+  try {
+    let next = 0;
+    const worker = async () => {
+      while (next < parts) {
+        const i = next++;
+        const length = Math.min(IMPORT_PART_SIZE, size - i * IMPORT_PART_SIZE);
+        const body = Buffer.alloc(length);
+        await fh.read(body, 0, length, i * IMPORT_PART_SIZE);
+        etags[i] = await putPart(s3.presignPart(key, uploadId, i + 1, 6 * 60 * 60), body, `${i + 1}-bo‘lak`);
+        sent[i] = length;
+        onProgress(sent.reduce((a, b) => a + b, 0));
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, parts) }, worker));
+    await s3.completeMultipartUpload(key, uploadId, etags.map((etag, i) => ({ partNumber: i + 1, etag })));
+    return key;
+  } catch (err) {
+    // Never leave a half-uploaded video in the bucket; the next run uploads it again.
+    await s3.abortMultipartUpload(key, uploadId).catch(() => {});
+    throw err;
+  } finally {
+    await fh.close();
+  }
+}
+
+/** Bunny when its keys are set, otherwise the site's R2/S3 storage when S3_* is set. */
+export function pickDestination(requested: string | undefined, source: Record<string, string | undefined>): "bunny" | "r2" | null {
+  if (requested === "bunny" || requested === "r2") return requested;
+  if (requested) throw new Error(`--to faqat "r2" yoki "bunny" bo‘ladi (berilgan: ${requested})`);
+  if (source.BUNNY_LIBRARY_ID?.trim() && source.BUNNY_API_KEY?.trim()) return "bunny";
+  if (source.S3_ENDPOINT?.trim() && source.S3_BUCKET?.trim()) return "r2";
+  return null;
+}
+
 /* ------------------------------------------------------------------ database */
 
 async function uniqueSlug(prisma: ScriptPrisma, model: "course" | "lesson", title: string) {
@@ -197,6 +307,7 @@ async function main() {
       yes: { type: "boolean", default: false },
       course: { type: "string" },
       category: { type: "string" },
+      to: { type: "string" },
     },
     allowPositionals: true,
   });
@@ -215,12 +326,26 @@ async function main() {
     process.exit(1);
   }
 
+  const destination = pickDestination(values.to, process.env);
+  console.log(
+    destination === "r2"
+      ? "Manzil: saytning R2/S3 ombori (S3_*)"
+      : destination === "bunny"
+        ? "Manzil: Bunny Stream"
+        : "Manzil hali tanlanmagan (.env.import da S3_* yoki BUNNY_* yo‘q) — faqat reja",
+  );
+
+  // Which site this run writes to — compare with the fingerprint in the Vercel build log
+  // ("Baza barmoq izi") before adding --yes; the address and password are never printed.
+  if (process.env.DATABASE_URL) console.log(`Baza barmoq izi: ${databaseFingerprint(process.env.DATABASE_URL)}`);
+  if (destination === "r2" && process.env.S3_BUCKET) console.log(`Bucket: ${process.env.S3_BUCKET.trim()}`);
+
   const prisma = process.env.DATABASE_URL ? createScriptPrisma() : null;
   if (!prisma) console.log("! DATABASE_URL yo‘q — saytda nima borligini tekshirmasdan faqat reja ko‘rsatiladi.\n");
 
   try {
     // ---- plan
-    type Row = PlannedLesson & { duration: number | null; exists: boolean };
+    type Row = PlannedLesson & { duration: number | null; exists: boolean; unsupported: boolean };
     const rows = new Map<PlannedCourse, Row[]>();
     let todo = 0;
     let todoBytes = 0;
@@ -237,8 +362,10 @@ async function main() {
         const exists = taken.has(l.title.toLowerCase());
         const ext = path.extname(l.file).toLowerCase();
         const duration = [".mp4", ".mov", ".m4v"].includes(ext) ? await mp4DurationSeconds(l.file) : null;
-        list.push({ ...l, duration, exists });
-        if (!exists) {
+        // The site plays MP4 and WebM in the browser; other containers must be converted for R2.
+        const unsupported = destination === "r2" && !exists && !R2_VIDEO_TYPES[ext];
+        list.push({ ...l, duration, exists, unsupported });
+        if (!exists && !unsupported) {
           todo++;
           todoBytes += l.size;
         }
@@ -246,7 +373,11 @@ async function main() {
       rows.set(course, list);
       console.log(`\n▸ Kurs: ${course.title}${existing ? " (saytda bor — yetishmagan darslar qo‘shiladi)" : " (yangi — nashr qilinmagan holda yaratiladi)"}`);
       list.forEach((r, i) =>
-        console.log(`   ${String(i + 1).padStart(2)}. ${r.title}  ·  ${mmss(r.duration)}  ·  ${mb(r.size)}${r.exists ? "  ✓ allaqachon bor" : ""}`),
+        console.log(
+          `   ${String(i + 1).padStart(2)}. ${r.title}  ·  ${mmss(r.duration)}  ·  ${mb(r.size)}${r.exists ? "  ✓ allaqachon bor" : ""}${
+            r.unsupported ? "  ✗ MP4/WebM emas — o‘tkazib yuboriladi (avval MP4 ga o‘tkazing)" : ""
+          }`,
+        ),
       );
     }
     console.log(`\nJami: ${todo} ta yangi dars, ${mb(todoBytes)} yuklanadi.`);
@@ -257,14 +388,29 @@ async function main() {
     }
     if (!todo) return;
     if (!prisma) throw new Error("DATABASE_URL kerak (.env.import faylida).");
-    const libraryId = process.env.BUNNY_LIBRARY_ID?.trim();
-    const apiKey = process.env.BUNNY_API_KEY?.trim();
-    if (!libraryId || !/^\d+$/.test(libraryId) || !apiKey) {
-      throw new Error("BUNNY_LIBRARY_ID (raqam) va BUNNY_API_KEY kerak (.env.import faylida). Bunny → Stream → kutubxona → API.");
+    if (!destination) throw new Error("Yuklash manzili yo‘q: .env.import ga S3_* (R2) yoki BUNNY_* qo‘shing, yoki --to r2|bunny bering.");
+
+    let bunny: Bunny | null = null;
+    let s3: S3Client | null = null;
+    const libraryId = process.env.BUNNY_LIBRARY_ID?.trim() ?? "";
+    if (destination === "bunny") {
+      const apiKey = process.env.BUNNY_API_KEY?.trim();
+      if (!libraryId || !/^\d+$/.test(libraryId) || !apiKey) {
+        throw new Error("BUNNY_LIBRARY_ID (raqam) va BUNNY_API_KEY kerak (.env.import faylida). Bunny → Stream → kutubxona → API.");
+      }
+      bunny = { base: (process.env.BUNNY_API_BASE || "https://video.bunnycdn.com").replace(/\/$/, ""), libraryId, apiKey };
+      // Check the key before anything is created on the site.
+      await bunnyJson(bunny, "GET", "/videos?page=1&itemsPerPage=1");
+    } else {
+      const parsed = parseS3Config(process.env);
+      if (!parsed.ok) throw new Error(parsed.error);
+      if (!parsed.config) throw new Error("S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY kerak (.env.import faylida, Vercel’dagi qiymatlar).");
+      s3 = new S3Client(parsed.config);
+      // Check the keys before anything is created on the site (a missing object answers 404 → null).
+      await s3.head(`videos/${"0".repeat(32)}.mp4`).catch((err) => {
+        throw new Error(`Omborga ulanib bo‘lmadi (${err?.status ?? ""} ${err?.code ?? err?.message}) — S3_* qiymatlarini tekshiring`);
+      });
     }
-    const bunny: Bunny = { base: (process.env.BUNNY_API_BASE || "https://video.bunnycdn.com").replace(/\/$/, ""), libraryId, apiKey };
-    // Check the key before anything is created on the site.
-    await bunnyJson(bunny, "GET", "/videos?page=1&itemsPerPage=1");
 
     const category = values.category
       ? await prisma.category.findFirst({ where: { kind: "COURSE", name: { equals: values.category, mode: "insensitive" } }, select: { id: true } })
@@ -275,7 +421,7 @@ async function main() {
     const failed: string[] = [];
     let done = 0;
     for (const course of plan) {
-      let dbCourse = await prisma.course.findFirst({ where: { title: { equals: course.title, mode: "insensitive" } }, select: { id: true } });
+      let dbCourse = await prisma.course.findFirst({ where: { title: { equals: course.title, mode: "insensitive" } }, select: { id: true, categoryId: true } });
       if (!dbCourse) {
         const last = await prisma.course.aggregate({ _max: { order: true } });
         dbCourse = await prisma.course.create({
@@ -286,26 +432,40 @@ async function main() {
             isPublished: false,
             categoryId: category?.id ?? null,
           },
-          select: { id: true },
+          select: { id: true, categoryId: true },
         });
         console.log(`\n＋ Kurs yaratildi: ${course.title}`);
       }
       for (const [index, r] of rows.get(course)!.entries()) {
-        if (r.exists) continue;
+        if (r.exists || r.unsupported) continue;
         const label = `[${done + failed.length + 1}/${todo}] ${course.title} — ${r.title}`;
         let guid: string | null = null;
+        let videoKey: string | null = null;
         try {
-          const created = await bunnyJson(bunny, "POST", "/videos", { title: `${course.title} — ${r.title}`.slice(0, 200) });
-          guid = String(created.guid ?? "");
-          if (!/^[0-9a-f-]{36}$/i.test(guid)) throw new Error("Bunny video ID qaytarmadi");
           const started = Date.now();
           let lastPrint = 0;
-          await uploadToBunny(bunny, guid, r.file, r.size, (sent) => {
+          const progress = (sent: number) => {
             if (Date.now() - lastPrint < 1000 && sent < r.size) return;
             lastPrint = Date.now();
             const speed = sent / Math.max(1, (Date.now() - started) / 1000);
             process.stdout.write(`\r${label}: ${Math.floor((sent / r.size) * 100)}% · ${mb(speed)}/s   `);
-          });
+          };
+          let videoData: { videoSource: "EMBED"; embedUrl: string } | { videoSource: "UPLOAD"; videoKey: string; videoMime: string; videoSize: bigint };
+          if (bunny) {
+            const created = await bunnyJson(bunny, "POST", "/videos", { title: `${course.title} — ${r.title}`.slice(0, 200) });
+            guid = String(created.guid ?? "");
+            if (!/^[0-9a-f-]{36}$/i.test(guid)) throw new Error("Bunny video ID qaytarmadi");
+            await uploadToBunny(bunny, guid, r.file, r.size, progress);
+            videoData = { videoSource: "EMBED", embedUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${guid.toLowerCase()}` };
+          } else {
+            const type = R2_VIDEO_TYPES[path.extname(r.file).toLowerCase()]!;
+            const sniffed = await sniffVideo(r.file);
+            if (!sniffed || sniffed.mime !== type.mime) throw new Error("fayl mazmuni MP4/WebM emas (kengaytmasi boshqacha bo‘lishi mumkin)");
+            videoKey = await uploadToS3(s3!, r.file, r.size, type, progress);
+            const stored = await s3!.head(videoKey);
+            if (!stored || stored.size !== r.size) throw new Error(`omborda hajm mos emas (${stored?.size ?? 0} / ${r.size})`);
+            videoData = { videoSource: "UPLOAD", videoKey, videoMime: type.mime, videoSize: BigInt(r.size) };
+          }
           // The position in the folder, so a lesson re-uploaded later still lands in its place —
           // unless that number is already taken in this course (numbers are unique per course).
           let order = index + 1;
@@ -317,31 +477,33 @@ async function main() {
           await prisma.lesson.create({
             data: {
               courseId: dbCourse.id,
+              categoryId: category?.id ?? dbCourse.categoryId ?? null,
               slug: await uniqueSlug(prisma, "lesson", r.title),
               title: r.title,
               order,
               durationSeconds: r.duration,
-              videoSource: "EMBED",
-              embedUrl: `https://iframe.mediadelivery.net/embed/${libraryId}/${guid.toLowerCase()}`,
+              ...videoData,
               isPublished: true,
               publishedAt: new Date(),
             },
           });
+          videoKey = null; // saved with the lesson
           done++;
           process.stdout.write(`\r${label}: ✓ yuklandi va saytga qo‘shildi\n`);
         } catch (err) {
           if (err instanceof BunnyAuthError) throw err; // every other video would fail the same way
           failed.push(`${course.title} — ${r.title}`);
           process.stdout.write(`\r${label}: ✗ ${err instanceof Error ? err.message : String(err)}\n`);
-          // Do not leave a half-uploaded video in Bunny; the next run uploads it again.
-          if (guid) await bunnyJson(bunny, "DELETE", `/videos/${guid}`).catch(() => {});
+          // Do not leave a half-uploaded video behind; the next run uploads it again.
+          if (guid && bunny) await bunnyJson(bunny, "DELETE", `/videos/${guid}`).catch(() => {});
+          if (videoKey && s3) await s3.delete(videoKey).catch(() => {});
         }
       }
     }
 
     console.log(`\n✓ ${done} ta dars qo‘shildi.${failed.length ? ` ✗ ${failed.length} tasi o‘tmadi — buyruqni qayta ishga tushiring, qolganlari davom etadi.` : ""}`);
     console.log("Keyingi qadam: Super admin → Kurslar → yangi kursni tekshirib, “Nashr qilingan”ni yoqing.");
-    console.log("Bunny videolarni qayta ishlashi (encoding) bir necha daqiqa olishi mumkin.");
+    if (bunny) console.log("Bunny videolarni qayta ishlashi (encoding) bir necha daqiqa olishi mumkin.");
     if (failed.length) process.exitCode = 1;
   } finally {
     await prisma?.$disconnect();

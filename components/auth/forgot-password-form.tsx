@@ -25,7 +25,10 @@ export function ForgotPasswordForm() {
       email: values.email.trim().toLowerCase(),
       redirectTo: "/reset-password",
     });
-    // Same response whether or not the account exists (prevents account enumeration).
+    if (err?.code === "MAIL_NOT_CONFIGURED") {
+      setError(authErrorMessage(err));
+      return;
+    }
     if (err && err.status === 429) {
       setError(authErrorMessage(err));
       return;
@@ -35,8 +38,8 @@ export function ForgotPasswordForm() {
 
   if (sent) {
     return (
-      <FormAlert tone="success">
-        Agar bu email bilan hisob mavjud bo‘lsa, parolni tiklash havolasi yuborildi. Pochta qutingizni (va “Spam” jildini) tekshiring. Havola 1 soat amal qiladi.
+      <FormAlert tone="info">
+        Xavfsizlik sababli hisob holati ko‘rsatilmaydi. Agar hisob mavjud bo‘lsa va pochta xizmati xatni qabul qilsa, tiklash havolasi keladi. Xat kelmasa, administratorga murojaat qiling.
         <Link href="/login" className="mt-3 block font-semibold text-gold-soft underline-offset-4 hover:underline">
           Kirish sahifasiga qaytish
         </Link>

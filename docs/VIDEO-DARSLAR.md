@@ -57,9 +57,75 @@ Sarlavha talabaga **“Texnik tahlil — 5-dars”** ko‘rinishida chiqadi (for
 - Bunny videosi o‘rnida 403: `BUNNY_STREAM_TOKEN_KEY` Bunny’dagi **Token authentication key**ga mos emas yoki Redeploy qilinmagan.
 - “Bu kursda N-dars allaqachon bor”: boshqa raqam tanlang yoki ro‘yxatda ↑/↓ bilan tartibni o‘zgartiring.
 
+## ZIP arxivdan saytga (Super admin panel orqali)
+
+`npm run content:import` arxivdagi videolarni **Super admin panelining o‘zi orqali** joylaydi: kategoriya, kurs
+va darslar odatdagi formalar bilan yaratiladi, video saytning R2 omboriga to‘g‘ridan-to‘g‘ri (bo‘laklab) yuklanadi.
+Kompyuterda baza yoki ombor kalitlari kerak emas — faqat super admin hisobi. ffmpeg, python3 va
+Playwright Chromium (`npx playwright install chromium`) kerak.
+
+Arxiv tuzilishi (bitta umumiy papka bo‘lsa, ochib olinadi):
+
+```
+<Kategoriya>/<01 - Dars nomi>.mp4            → kurs = kategoriya nomi
+<Kategoriya>/<Kurs>/<01 - Dars nomi>.mp4     → kategoriya ichida alohida kurs
+```
+
+Tartib nomlardagi raqamdan olinadi: `01 - …`, `1-dars …`, `Dars 3 …` (10-dars 9-darsdan keyin keladi).
+Raqam bo‘lmasa yoki takrorlansa, alifbo tartibida 1, 2, 3… beriladi.
+
+1. **Reja** (hech narsa yuklanmaydi):
+   ```bash
+   npm run content:import -- plan darslar.zip --free 1
+   ```
+   `content-import/PLAN.md`: kategoriyalar, kurslar, dars raqamlari va nomlari, davomiyligi, hajmi, Bepul/PRO va har
+   fayl uchun holat. `--free 1` har kursning 1-darsini bepul qiladi (standart: hammasi PRO).
+   Holatlar: **upload** (tayyor MP4/WebM) · **remux** (MOV yoki indeksi oxirida — sifat o‘zgarmaydi) ·
+   **transcode** (HEVC, 10-bit va h.k. — brauzer o‘ynatmaydi, qayta kodlash kerak) · **skip** (o‘qilmaydi yoki
+   mazmuni boshqa fayl bilan **bir xil** — takror dars yaratilmaydi). 2 GB dan katta fayllar ham siqiladi.
+   Nomlar va Bepul/PRO ni `content-import/plan.json` da tahrirlash mumkin.
+2. **Tayyorlash:** `npm run content:import -- prepare` (qayta kodlash faqat `--allow-transcode` bilan).
+3. **Yuklash:**
+   ```bash
+   IMPORT_ADMIN_EMAIL=… IMPORT_ADMIN_PASSWORD=… npm run content:import -- import --site https://auforex.vercel.app
+   ```
+   Kurslar **nashr qilinmagan** holda yaratiladi. Qayta ishga tushirish xavfsiz: saytda bor darslar (shu kursda
+   shu nom yoki raqam) o‘tkazib yuboriladi, natija `content-import/ledger.json` da saqlanadi.
+4. **Tekshirish:** `… -- verify --site …` — har dars saytda bitta, videosi ombordan ochiladi (206).
+5. **Nashr:** tekshirib, tasdiqlagandan keyin `… -- publish --site …`.
+
+**Bitta kurs (seriya) uchun — tasdiqlangan nomlar, kategoriya, tavsif va muqova bilan:**
+[`content/forex-kurs.json`](../content/forex-kurs.json) da kurs nomi/tavsifi/kategoriyasi va har dars (raqami bo‘yicha)
+uchun nom, kategoriya, daraja (`BEGINNER`/`INTERMEDIATE`/`ADVANCED`), kirish (`FREE`/`PRO`), mavzular va tavsif yoziladi.
+
+```bash
+npm run content:import -- plan <papka yoki zip> --meta content/forex-kurs.json   # PLAN.md: bitta jadval, dars tartibida
+npm run content:import -- covers            # covers/NN.jpg — sayt uslubidagi 16:9 muqova (logotip, raqam, nom, mavzular)
+npm run content:import -- prepare           # MP4 indeksini boshiga ko‘chirish (sifat o‘zgarmaydi)
+npm run content:import -- import --site …   # tavsif, daraja va muqova bilan
+npm run content:import -- verify --site …
+npm run content:import -- update-covers --site …   # muqova o‘zgartirilsa, saytdagi darslarda almashtiradi
+```
+
+Muqova saytdagi bo‘sh joylarga moslangan: katalogdagi “Bepul” belgisi (yuqori chap), pleyerdagi tomoshabin belgisi
+(yuqori o‘ng), pleyer boshqaruvi (pastki qism) va o‘ynatish tugmasi (pastki o‘ng) ustiga matn tushmaydi.
+1-bosqich rejasi: [`content/PLAN-1-bosqich.md`](../content/PLAN-1-bosqich.md).
+
+Sinov (Preview, 27.11.2026): arxiv → 2 kategoriya, 5 dars (takror fayl o‘tkazib yuborildi, MOV va indeks oxirida →
+remux, HEVC → H.264). Ikkinchi ishga tushirishda 0 ta yangi dars. Tezlik: 116 MB video 26,7 MB/s.
+
 ## Ko‘p videoni bir buyruq bilan qo‘shish (o‘z kompyuteringizda)
 
-`npm run videos:import` papkadagi videolarni to‘g‘ridan-to‘g‘ri Bunny’ga yuklaydi va saytga kurs/dars qilib, tartib bilan qo‘shadi.
+`npm run videos:import` papkadagi videolarni yuklaydi va saytga kurs/dars qilib, tartib bilan qo‘shadi. Ikki manzil bor:
+
+- **`--to r2`** (tavsiya) — saytning o‘z ombori (Cloudflare R2), admin panelidan yuklangan videolar bilan bir xil:
+  himoyalangan, faqat PRO/bepul qoidalari bo‘yicha o‘ynaydi. Faqat **MP4 (H.264/AAC)** va **WebM** — brauzer o‘ynaydigan
+  formatlar; boshqalari (MOV, MKV, AVI) rejada “o‘tkazib yuboriladi” deb ko‘rsatiladi, ularni avval MP4 ga o‘tkazing.
+  10 MB dan katta videolar 10 MB bo‘laklab, bir vaqtda 4 ta bo‘lak yuklanadi; uzilgan bo‘lak qayta yuboriladi,
+  xatoda ombordagi chala fayl o‘chiriladi. Har video mazmuni (birinchi baytlar) va yuklangandan keyin hajmi tekshiriladi.
+- **`--to bunny`** — Bunny Stream (darslar Bunny pleyeri orqali o‘ynaydi).
+
+`--to` berilmasa: `.env.import` da Bunny kalitlari bo‘lsa Bunny, aks holda S3_* bo‘lsa R2.
 
 **1. Papkani tayyorlang** — har bir kurs alohida papka, videolar raqam bilan boshlansin:
 
@@ -79,19 +145,28 @@ MP4/MOV fayllarning davomiyligi avtomatik o‘qiladi.
 
 ```
 DATABASE_URL="…"          # Vercel → Storage → bazangiz → .env.local yorlig‘idagi DATABASE_URL
+# R2 uchun (Vercel’dagi qiymatlar bilan bir xil, docs/FAYL-SAQLASH.md):
+S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+S3_BUCKET="auforex-media"
+S3_ACCESS_KEY_ID="…"
+S3_SECRET_ACCESS_KEY="…"
+# yoki Bunny uchun:
 BUNNY_LIBRARY_ID="123456" # Bunny → Stream → kutubxona → API → Video Library ID
 BUNNY_API_KEY="…"         # o‘sha sahifadagi API Key (token kaliti emas!)
 ```
 
+> Production bazasi va bucket’iga yuklashdan oldin bir marta test baza/bucket bilan sinab ko‘ring.
+
 **3. Avval reja, keyin yuklash:**
 
 ```
-npm run videos:import -- "D:\AU Forex darslar"          # nima qo‘shilishini ko‘rsatadi, hech narsa yuklamaydi
-npm run videos:import -- "D:\AU Forex darslar" --yes    # yuklaydi
+npm run videos:import -- "D:\AU Forex darslar" --to r2          # reja: nima qo‘shilishini ko‘rsatadi, hech narsa yuklamaydi
+npm run videos:import -- "D:\AU Forex darslar" --to r2 --yes    # yuklaydi
 ```
 
 Qo‘shimcha: `--category "Texnik tahlil"` (yangi kurslarga kategoriya), `--course "Nom"` (videolar papka ichida to‘g‘ridan-to‘g‘ri bo‘lsa).
 
 - Internet uzilsa yoki biror video o‘tmasa — buyruqni qayta ishga tushiring: qo‘shilganlari o‘tkazib yuboriladi, qolganlari o‘z o‘rniga tushadi.
 - Yangi kurslar **nashr qilinmagan** holda yaratiladi: Super admin → Kurslar’da tekshirib, “Nashr qilingan”ni yoqing.
-- Bunny videoni qayta ishlashi (encoding) har bir video uchun bir necha daqiqa oladi — shu vaqt ichida pleyer “processing” deydi.
+- Bunny videoni qayta ishlashi (encoding) har bir video uchun bir necha daqiqa oladi — shu vaqt ichida pleyer “processing” deydi (R2 da bunday kutish yo‘q).
+- Darslar PRO sifatida yaratiladi; bepul qilish, kategoriya yoki muqova — Super admin → Video darslar → Tahrirlash.

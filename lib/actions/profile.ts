@@ -8,6 +8,7 @@ import { assertUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { isMailConfigured } from "@/lib/env";
 import { rateLimit, RateLimitError } from "@/lib/rate-limit";
+import { deleteStoredFile } from "@/lib/storage";
 import { emailSchema } from "@/lib/validations/auth";
 import { profileSchema, type ProfileInput } from "@/lib/validations/profile";
 import { actionError, UserFacingError, type ActionResult } from "./result";
@@ -36,6 +37,8 @@ export async function removeAvatar(): Promise<ActionResult> {
   try {
     const viewer = await assertUser();
     await prisma.user.update({ where: { id: viewer.id }, data: { image: null } });
+    // The uploaded file is removed as well (best effort), not left behind in storage.
+    if (viewer.image?.startsWith("/api/media/avatars/")) await deleteStoredFile(viewer.image.slice("/api/media/".length));
     revalidatePath("/dashboard", "layout");
     return { ok: true };
   } catch (err) {
@@ -57,6 +60,7 @@ export async function changeEmail(input: z.input<typeof changeEmailSchema>): Pro
     const viewer = await assertUser();
     rateLimit(`change-email:${viewer.id}`, 5, 10 * 60_000);
     const { newEmail, currentPassword } = changeEmailSchema.parse(input);
+    if (!isMailConfigured()) throw new UserFacingError("Email orqali tasdiqlash vaqtincha mavjud emas — emailni hozircha o‘zgartirib bo‘lmaydi. Yordam uchun administratorga yozing.");
     if (newEmail === viewer.email) throw new UserFacingError("Bu sizning joriy emailingiz");
     const account = await prisma.account.findFirst({ where: { userId: viewer.id, providerId: "credential" }, select: { password: true } });
     if (!account?.password || !(await verifyPassword({ hash: account.password, password: currentPassword }))) {
@@ -66,11 +70,16 @@ export async function changeEmail(input: z.input<typeof changeEmailSchema>): Pro
       throw new UserFacingError("Bu email boshqa hisobda ishlatilmoqda");
     }
     await prisma.user.update({ where: { id: viewer.id }, data: { email: newEmail, emailVerified: false } });
-    if (isMailConfigured()) {
+    try {
       await getAuth().api.sendVerificationEmail({ body: { email: newEmail, callbackURL: "/verify-email" } });
+    } catch (error) {
+      // The mail did not go out: keep the old address so the account is never left unreachable.
+      await prisma.user.update({ where: { id: viewer.id }, data: { email: viewer.email, emailVerified: viewer.emailVerified } });
+      console.error("[profile] change-email verification mail failed", error instanceof Error ? error.message : error);
+      throw new UserFacingError("Tasdiqlash xati yuborilmadi — email o‘zgartirilmadi. Birozdan so‘ng qayta urinib ko‘ring.");
     }
     revalidatePath("/dashboard", "layout");
-    return { ok: true, message: isMailConfigured() ? "Email o‘zgartirildi. Yangi manzilga tasdiqlash xati yuborildi." : "Email o‘zgartirildi" };
+    return { ok: true, message: "Email o‘zgartirildi. Yangi manzilga tasdiqlash xati yuborildi." };
   } catch (err) {
     if (err instanceof RateLimitError) return { ok: false, error: err.message };
     return actionError(err);

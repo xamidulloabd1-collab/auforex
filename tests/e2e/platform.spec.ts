@@ -1,5 +1,6 @@
 import path from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { countMails, registerUser, testAddress, VERIFY_SUBJECT } from "./helpers";
 
 /**
  * Full platform walkthrough covering the QA scenarios from the specification.
@@ -12,8 +13,8 @@ const FOUNDER_LOGIN = process.env.E2E_FOUNDER_LOGIN ?? "asadbek";
 const FOUNDER_PASSWORD = process.env.E2E_FOUNDER_PASSWORD ?? "";
 const RUN = Date.now().toString(36);
 const PASSWORD = "Trader2026x";
-const FREE = { name: "Free Tester", email: `free-${RUN}@example.com` };
-const PRO = { name: "Pro Tester", email: `pro-${RUN}@example.com` };
+const FREE = { name: "Free Tester", email: testAddress(`free-${RUN}`) };
+const PRO = { name: "Pro Tester", email: testAddress(`pro-${RUN}`) };
 const COURSE_TITLE = `E2E kurs ${RUN}`;
 const LESSON_TITLE = `E2E dars ${RUN}`;
 const CHALLENGE_TITLE = `E2E test challenge ${RUN}`;
@@ -35,15 +36,9 @@ async function newContext(browser: Browser, opts: Parameters<Browser["newContext
   return browser.newContext({ ...opts });
 }
 
+/** Registers and ends signed in on /dashboard (opens the verification email when it is required). */
 async function register(page: Page, name: string, email: string) {
-  await page.goto("/register");
-  await page.getByLabel("Ism va familiya").fill(name);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Parol", { exact: true }).fill(PASSWORD);
-  await page.getByLabel("Parolni tasdiqlang").fill(PASSWORD);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Ro‘yxatdan o‘tish" }).click();
-  await page.waitForURL("**/dashboard");
+  await registerUser(page, { name, email, password: PASSWORD });
 }
 
 async function login(page: Page, email: string, password: string) {
@@ -105,8 +100,20 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     await g.getByLabel("Parol", { exact: true }).fill(PASSWORD);
     await g.getByLabel("Parolni tasdiqlang").fill(PASSWORD);
     await g.getByRole("checkbox").check();
+    const mailsBefore = await countMails(FREE.email, VERIFY_SUBJECT).catch(() => 0);
     await g.getByRole("button", { name: "Ro‘yxatdan o‘tish" }).click();
-    await expect(g.getByRole("alert").first()).toContainText("allaqachon mavjud");
+    // Without verification the duplicate is refused openly. With verification (production) the answer
+    // looks like a normal sign-up — it never reveals that the address has an account — and no
+    // second account or verification email is created for the existing, verified user.
+    const refused = g.getByTestId("register-form").getByRole("alert");
+    const notice = g.getByTestId("verify-email-notice");
+    await expect(refused.or(notice).first()).toBeVisible();
+    if (await notice.isVisible()) {
+      await g.waitForTimeout(3_000);
+      expect(await countMails(FREE.email, VERIFY_SUBJECT).catch(() => 0)).toBe(mailsBefore);
+    } else {
+      await expect(refused).toContainText("allaqachon mavjud");
+    }
     await guest.close();
   });
 
@@ -255,8 +262,13 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     await page.getByTestId("mark-complete").click();
     await expect(page.getByTestId("lesson-status")).toHaveText("Dars yakunlangan");
 
+    // A fresh database holds only this lesson (100%); a shared Preview database keeps lessons from earlier runs,
+    // so check the counts this new user owns: exactly one lesson completed, and the percent that follows from it.
     await page.goto("/lessons");
-    await expect(page.getByTestId("learning-progress")).toContainText("100%");
+    const progress = page.getByTestId("learning-progress");
+    await expect(progress).toContainText(/\b1\/\d+ dars yakunlangan/);
+    const total = Number((await progress.innerText()).match(/\b1\/(\d+) dars/)![1]);
+    await expect(progress).toContainText(`${Math.round(100 / total)}%`);
     await page.goto("/dashboard/learning");
     await expect(page.getByText(LESSON_TITLE).first()).toBeVisible();
   });
@@ -473,6 +485,7 @@ test.describe.serial("AU Forex Academy — QA scenarios", () => {
     await expect(iframe.or(fallback).first()).toBeVisible({ timeout: 25_000 });
     await page.getByRole("radio", { name: "GBP/USD" }).click();
     await expect(page.getByRole("radio", { name: "GBP/USD" })).toHaveAttribute("aria-checked", "true");
+    await expect(iframe).toHaveAttribute("src", /symbol=FX%3AGBPUSD/);
     await expect(page.getByText("real vaqt rejimi kafolatlanmaydi")).toBeVisible();
   });
 

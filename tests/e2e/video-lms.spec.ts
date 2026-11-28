@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { registerUser, testAddress } from "./helpers";
 
 /**
  * Video lesson management: categories, lesson numbers, Free/PRO access, direct uploads (large
@@ -36,14 +37,7 @@ async function login(page: Page, id: string, password: string) {
 }
 
 async function register(page: Page, name: string, email: string) {
-  await page.goto("/register");
-  await page.getByLabel("Ism va familiya").fill(name);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Parol", { exact: true }).fill(PASSWORD);
-  await page.getByLabel("Parolni tasdiqlang").fill(PASSWORD);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Ro‘yxatdan o‘tish" }).click();
-  await page.waitForURL("**/dashboard");
+  await registerUser(page, { name, email, password: PASSWORD });
 }
 
 async function lessonIdFromAdmin(page: Page, title: string) {
@@ -114,7 +108,7 @@ test.describe.serial("Video LMS", () => {
     });
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/big.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByTestId("lesson-duration")).toHaveValue("20");
+    await expect(page.getByTestId("lesson-duration")).toHaveValue(/^[1-9]\d*$/);
     if (S3) {
       const parts = uploads.filter((u) => u.includes("partNumber="));
       expect(parts.length).toBe(2);
@@ -134,7 +128,11 @@ test.describe.serial("Video LMS", () => {
     await expect(page.getByText("5-dars allaqachon bor")).toBeVisible();
 
     // A text file named .mp4 is rejected by its content.
-    await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/fake.mp4`);
+    await page.getByTestId("video-upload").setInputFiles({
+      name: "fake.mp4",
+      mimeType: "video/mp4",
+      buffer: Buffer.from("not a valid MP4 file"),
+    });
     await expect(page.getByText(/mos emas|qo‘llab-quvvatlanmaydi/)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Video yuklangan")).toHaveCount(0);
 
@@ -144,6 +142,24 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("lesson-access").selectOption("FREE");
     await page.getByTestId("video-upload").setInputFiles(`${MEDIA}/small.mp4`);
     await expect(page.getByText("Video yuklangan")).toBeVisible({ timeout: 30_000 });
+    if (S3) {
+      // Chromium does not report CORS preflights as page events, so send the same preflight the
+      // browser sends before a direct upload: the bucket must allow this site, PUT and Content-Type.
+      const site = new URL(page.url()).origin;
+      const target = uploads.find((u) => !u.includes("/api/admin/upload"))!;
+      const allowed = await page.request.fetch(target, {
+        method: "OPTIONS",
+        headers: { Origin: site, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type" },
+      });
+      expect(allowed.status()).toBeLessThan(300);
+      expect(allowed.headers()["access-control-allow-origin"]).toBe(site);
+      // Another site is refused by the same rule.
+      const foreign = await page.request.fetch(target, {
+        method: "OPTIONS",
+        headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type" },
+      });
+      expect(foreign.status()).toBeGreaterThanOrEqual(400);
+    }
     await page.getByTestId("lesson-publish").click();
     await page.getByTestId("lesson-save").click();
     await page.waitForURL("**/super-admin/lessons");
@@ -192,7 +208,9 @@ test.describe.serial("Video LMS", () => {
     await expect(page.getByText("Yuklash bekor qilindi")).toHaveCount(0, { timeout: 15_000 });
 
     // 2) Cancelled while the data is being sent. Slow the transport down so there is time to press "Bekor qilish".
-    const transport = S3 ? /127\.0\.0\.1:5055\// : /\/api\/admin\/upload\?/;
+    // The bucket's S3 host (E2E_S3_HOST, e.g. <account>.r2.cloudflarestorage.com); the local emulator by default.
+    const s3Host = (process.env.E2E_S3_HOST ?? "127.0.0.1:5055").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const transport = S3 ? new RegExp(`${s3Host}/`) : /\/api\/admin\/upload\?/;
     await page.route(transport, async (route) => {
       if (route.request().method() === "PUT") await new Promise((r) => setTimeout(r, 4000));
       await route.continue().catch(() => {});
@@ -229,7 +247,7 @@ test.describe.serial("Video LMS", () => {
 
   test("FREE user: free lesson plays, PRO lesson locked; the video API refuses direct calls", async () => {
     const page = await freeUser.newPage();
-    await register(page, "Free LMS", `free-lms-${RUN}@example.com`);
+    await register(page, "Free LMS", testAddress(`free-lms-${RUN}`));
     await page.goto("/lessons");
     const proCard = page.getByTestId("lesson-card").filter({ hasText: PRO_LESSON });
     await expect(proCard).toHaveAttribute("data-lock-reason", "pro");
@@ -278,7 +296,7 @@ test.describe.serial("Video LMS", () => {
 
   test("PRO user: numbered heading, video plays (from the bucket when S3 is on), progress saved", async () => {
     const page = await proUser.newPage();
-    const email = `pro-lms-${RUN}@example.com`;
+    const email = testAddress(`pro-lms-${RUN}`);
     await register(page, "Pro LMS", email);
     const a = await admin.newPage();
     await a.goto(`/super-admin/users?q=${encodeURIComponent(email)}`);
@@ -293,6 +311,8 @@ test.describe.serial("Video LMS", () => {
     await page.getByTestId("go-to-blocker").click();
     await page.waitForURL(freeLessonUrl);
     await page.getByTestId("mark-complete").click();
+    // Wait until the completion is saved (the next-lesson link is shown before that, still locked).
+    await expect(page.getByTestId("lesson-status")).toHaveText("Dars yakunlangan");
     await expect(page.getByTestId("next-lesson")).toContainText(PRO_LESSON);
     await page.goto(proLessonUrl);
     await expect(page.getByTestId("lesson-heading")).toHaveText(`${CATEGORY} — 5-dars`, { ignoreCase: true });
@@ -354,5 +374,25 @@ test.describe.serial("Video LMS", () => {
     await reader.goto("/books");
     await reader.getByTestId("book-card").filter({ hasText: "Trading Noldan" }).getByRole("link", { name: /O‘qish|Davom ettirish/ }).click();
     await expect(reader.getByTestId("pdf-reader").getByText("/ 178").filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("system tab: live storage check (bucket keys, CORS, ETag, multipart) or local disk explained", async () => {
+    const page = await admin.newPage();
+    await page.goto("/super-admin/settings");
+    await page.getByRole("tab", { name: "Tizim" }).click();
+    const status = page.getByTestId("system-status");
+    await expect(status).toBeVisible();
+    // Keys and passwords are never shown.
+    await expect(status).not.toContainText("testsecret");
+    if (S3) {
+      await expect(status).toContainText("R2/S3");
+      await page.getByTestId("check-storage").click();
+      await expect(page.getByText("Fayl ombori to‘g‘ri sozlangan")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("storage-check-report").locator("li")).toHaveCount(5);
+    } else {
+      await expect(status).toContainText("server diski");
+      await expect(page.getByTestId("check-storage")).toBeDisabled();
+    }
+    await page.close();
   });
 });

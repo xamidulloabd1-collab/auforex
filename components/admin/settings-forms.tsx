@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Controller, useFieldArray, useForm, type FieldValues, type Path } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch, type FieldValues, type Path } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2Icon, PlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 import type { z } from "zod";
@@ -250,7 +250,7 @@ export function AccessForm({ defaults }: { defaults: SettingsValue<"access"> }) 
 export function FounderForm({ defaults, portraitUrl }: { defaults: SettingsValue<"founder">; portraitUrl: string | null }) {
   const { form, onSubmit, pending, err } = useSettingsForm("founder", founderSettingsSchema, defaults);
   const [preview, setPreview] = React.useState(portraitUrl);
-  const portraitKey = form.watch("portraitKey");
+  const portraitKey = useWatch({ control: form.control, name: "portraitKey" });
   return (
     <form onSubmit={onSubmit} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_300px]" data-testid="founder-form">
       <div className="card-surface grid gap-5 p-6">

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MAX_SINGLE_REQUEST_IMAGE_BYTES as MAX_IMAGE_BYTES } from "@/lib/constants";
 
 async function submit(challengeId: string, data: FormData) {
   const res = await fetch(`/api/challenges/${challengeId}/submission`, { method: "POST", body: data });
@@ -121,8 +122,8 @@ export function SubmissionForm({
       return;
     }
     const file = fd.get("attachment");
-    if (file instanceof File && file.size > 5 * 1024 * 1024) {
-      setError("Rasm hajmi 5 MB dan oshmasin");
+    if (file instanceof File && file.size > MAX_IMAGE_BYTES) {
+      setError("Rasm hajmi 4 MB dan oshmasin");
       return;
     }
     setPending(true);
@@ -155,7 +156,7 @@ export function SubmissionForm({
       </div>
       {allowAttachment && (
         <div className="grid gap-2">
-          <Label htmlFor="attachment">Grafik skrinshoti (PNG, JPG yoki WEBP, 5 MB gacha)</Label>
+          <Label htmlFor="attachment">Grafik skrinshoti (PNG, JPG yoki WEBP, 4 MB gacha)</Label>
           <label
             htmlFor="attachment"
             className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-4 text-sm text-muted-foreground transition hover:border-primary/50"

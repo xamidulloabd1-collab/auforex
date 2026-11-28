@@ -5,12 +5,27 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { username } from "better-auth/plugins";
 import { appUrl, env, isMailConfigured } from "@/lib/env";
-import { vercelOrigins } from "@/lib/env-schema";
+import { emailVerificationRequired, vercelOrigins } from "@/lib/env-schema";
 import { prisma } from "@/lib/db/prisma";
-import { sendMail } from "@/lib/mail";
+import { MailDeliveryError, sendMail } from "@/lib/mail";
 import { passwordResetEmail, verificationEmail } from "@/lib/mail/templates";
 import { nameSchema, passwordSchema } from "@/lib/validations/auth";
 import { devLanOrigin, requestOwnOrigin } from "./origins";
+
+/** A mail that could not be sent becomes a clear 503 for the form instead of a generic 500. */
+async function deliver(mail: Parameters<typeof sendMail>[0]) {
+  try {
+    await sendMail(mail);
+  } catch (err) {
+    if (err instanceof MailDeliveryError) {
+      throw new APIError("SERVICE_UNAVAILABLE", {
+        code: "MAIL_SEND_FAILED",
+        message: "Xat yuborilmadi: pochta xizmati vaqtincha ishlamayapti. Birozdan so‘ng qayta urinib ko‘ring.",
+      });
+    }
+    throw err;
+  }
+}
 
 function firstIssue(result: { success: boolean; error?: { issues: { message: string }[] } }) {
   return result.error?.issues[0]?.message ?? "Ma’lumotlar noto‘g‘ri";
@@ -20,7 +35,7 @@ function createAuth() {
   const e = env();
   const baseURL = appUrl();
   const mailReady = isMailConfigured();
-  const requireEmailVerification = mailReady && e.REQUIRE_EMAIL_VERIFICATION !== "false";
+  const requireEmailVerification = emailVerificationRequired(e, mailReady);
   const extraOrigins = (e.TRUSTED_ORIGINS ?? "")
     .split(",")
     .map((o) => o.trim())
@@ -59,18 +74,18 @@ function createAuth() {
       resetPasswordTokenExpiresIn: 60 * 60,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
-        const mail = passwordResetEmail(user.name, url);
-        await sendMail({ to: user.email, ...mail });
+        // Better Auth logs a failure here and still answers "sent" (it never reveals whether the
+        // address has an account); the reason is in the server log ([mail] …).
+        await deliver({ to: user.email, ...passwordResetEmail(user.name, url) });
       },
     },
 
     emailVerification: {
-      sendOnSignUp: mailReady,
+      sendOnSignUp: false,
       autoSignInAfterVerification: true,
       expiresIn: 60 * 60 * 24,
       sendVerificationEmail: async ({ user, url }) => {
-        const mail = verificationEmail(user.name, url);
-        await sendMail({ to: user.email, ...mail });
+        await deliver({ to: user.email, ...verificationEmail(user.name, url) });
       },
     },
 
@@ -86,13 +101,17 @@ function createAuth() {
       storage: "database",
       window: 60,
       max: 100,
+      // Limits are per IP address. Many students share one address (mobile carriers' NAT, a
+      // classroom Wi-Fi signing in when a lesson starts), and every registration also sends one
+      // verification email from the form, so the limits leave room for a group signing up and in
+      // together while still stopping scripted abuse (passwords: 8+ chars with letters and digits).
       customRules: {
-        "/sign-in/email": { window: 60, max: 15 },
-        "/sign-in/username": { window: 60, max: 15 },
-        "/sign-up/email": { window: 60 * 10, max: 10 },
-        "/request-password-reset": { window: 60 * 10, max: 5 },
+        "/sign-in/email": { window: 60, max: 30 },
+        "/sign-in/username": { window: 60, max: 30 },
+        "/sign-up/email": { window: 60 * 10, max: 30 },
+        "/request-password-reset": { window: 60 * 10, max: 10 },
         "/reset-password": { window: 60 * 10, max: 10 },
-        "/send-verification-email": { window: 60 * 10, max: 5 },
+        "/send-verification-email": { window: 60 * 10, max: 30 },
         "/change-password": { window: 60 * 10, max: 10 },
       },
     },
@@ -109,6 +128,16 @@ function createAuth() {
       // Server-side password/name policy (the client validates too, but is never trusted).
       before: createAuthMiddleware(async (ctx) => {
         const body = (ctx.body ?? {}) as Record<string, unknown>;
+        const requiresMail =
+          ctx.path === "/request-password-reset" ||
+          ctx.path === "/send-verification-email" ||
+          (ctx.path === "/sign-up/email" && requireEmailVerification);
+        if (requiresMail && !mailReady) {
+          throw new APIError("SERVICE_UNAVAILABLE", {
+            code: "MAIL_NOT_CONFIGURED",
+            message: "Email xizmati vaqtincha mavjud emas. Yordam uchun administratorga yozing.",
+          });
+        }
         if (ctx.path === "/sign-up/email") {
           // Logins (usernames) are assigned by the academy, not chosen at sign-up.
           if ("username" in body) throw new APIError("BAD_REQUEST", { message: "Login faqat administrator tomonidan beriladi" });

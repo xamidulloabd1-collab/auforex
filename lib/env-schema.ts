@@ -4,10 +4,11 @@
  */
 import { z } from "zod";
 
+/** "true"/"1" → true, "false"/"0" → false, not set → undefined (so a default can apply). */
 const boolish = z
   .enum(["true", "false", "1", "0", ""])
   .optional()
-  .transform((v) => v === "true" || v === "1");
+  .transform((v) => (v === undefined || v === "" ? undefined : v === "true" || v === "1"));
 
 export const serverEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -29,6 +30,8 @@ export const serverEnvSchema = z.object({
   S3_BUCKET: z.string().min(3).optional(),
   S3_ACCESS_KEY_ID: z.string().min(8).optional(),
   S3_SECRET_ACCESS_KEY: z.string().min(16).optional(),
+  /** Only for temporary S3 credentials (e.g. R2 Temporary Credentials API on a Preview). */
+  S3_SESSION_TOKEN: z.string().min(16).optional(),
   /** Bunny Stream → Library → Security → "Token authentication key" (signs lesson video links). */
   BUNNY_STREAM_TOKEN_KEY: z.string().min(16, "BUNNY_STREAM_TOKEN_KEY juda qisqa").optional(),
   STORAGE_LOCAL_ROOT: z.string().default("./storage"),
@@ -42,7 +45,7 @@ export const serverEnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   MAIL_FROM: z.string().optional(),
-  /** When SMTP is configured, email verification is required unless this is "false". */
+  /** Verification defaults on when SMTP is configured and in production; "false" explicitly disables it. */
   REQUIRE_EMAIL_VERIFICATION: z.enum(["true", "false"]).optional(),
 });
 
@@ -56,9 +59,34 @@ export const serverEnvSchemaChecked = serverEnvSchema.superRefine((e, ctx) => {
       message: "S3 sozlamalari to‘liq emas: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY hammasi kerak",
     });
   }
+
+  const mailTransportSettings = [e.SMTP_HOST, e.SMTP_USER, e.SMTP_PASSWORD];
+  if (mailTransportSettings.some(Boolean) && (!e.SMTP_HOST || !e.MAIL_FROM)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["SMTP_HOST"],
+      message: "Email uchun SMTP_HOST va MAIL_FROM ikkalasi ham kerak",
+    });
+  }
+  if (Boolean(e.SMTP_USER) !== Boolean(e.SMTP_PASSWORD)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["SMTP_USER"],
+      message: "SMTP autentifikatsiyasi uchun SMTP_USER va SMTP_PASSWORD ikkalasi ham kerak",
+    });
+  }
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+export function emailVerificationRequired(
+  environment: Pick<ServerEnv, "NODE_ENV" | "REQUIRE_EMAIL_VERIFICATION">,
+  mailConfigured: boolean,
+) {
+  if (environment.REQUIRE_EMAIL_VERIFICATION === "false") return false;
+  if (environment.REQUIRE_EMAIL_VERIFICATION === "true") return true;
+  return mailConfigured || environment.NODE_ENV === "production";
+}
 
 /**
  * `KEY=""` in .env means "not set". Treating empty strings as undefined lets every

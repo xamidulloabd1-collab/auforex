@@ -182,15 +182,18 @@ comes from and the database host the site will use — never the values. Details
 | `npm run db:migrate` / `db:deploy` / `db:seed` / `db:studio` | Prisma migrate dev / deploy, seed, Prisma Studio |
 | `npm run setup` | Create `.env` and generate missing secrets (safe to re-run) |
 | `npm run doctor` | Health check with fixes (Uzbek) |
+| `npm run storage:check -- --origin https://<site>` | Live check of the R2/S3 bucket: keys, read/write/delete, CORS preflight from the site, ETag exposure, multipart start/abort ([docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md)) |
+| `npm run mail:check [-- --to you@example.com]` | SMTP connect + login check, optionally sends a test email ([docs/EMAIL.md](docs/EMAIL.md)) |
 | `npm run deploy:env` | Prints the Railway variables block with freshly generated secrets |
 | `npm run start:prod` | Production start: checks → migrations → seed → `next start` (used by the Docker image) |
 | `npm run db:fix` | Finds and fixes local database problems without deleting data: starts the Docker database, moves it to a free port if another PostgreSQL owns the configured one, aligns the container password with `.env`, creates a missing database, writes the working `DATABASE_URL`/`DB_PORT` |
 | `npm run founder:password [password]` | Set/reset the founder’s password in your database |
 | `npm run admin:create -- --email … [--password …] [--name …] [--username …]` | Create or promote a super admin (PowerShell: `npx tsx scripts/create-admin.ts --email …`) |
 | `npm run build:vercel` | Vercel build: settings check → production-only `prisma migrate deploy` → `next build` |
-| `npm run videos:import -- "<folder>" [--yes]` | Bulk-upload a folder of videos to Bunny Stream and create courses/lessons ([docs/VIDEO-DARSLAR.md](docs/VIDEO-DARSLAR.md)) |
+| `npm run videos:import -- "<folder>" --to r2 [--yes]` | Bulk-upload a folder of MP4/WebM videos straight to the site's R2 bucket (multipart, verified) — or `--to bunny` for Bunny Stream — and create courses/lessons in order ([docs/VIDEO-DARSLAR.md](docs/VIDEO-DARSLAR.md)) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run test:e2e` | End-to-end tests (Playwright) against a running server |
+| `npm run e2e:media [folder]` | Creates the media files the E2E suite uploads (default `/tmp/e2emedia`; `big.mp4` needs ffmpeg) |
 
 ---
 
@@ -207,11 +210,17 @@ E2E_ADMIN_EMAIL=admin@example.com E2E_ADMIN_PASSWORD='…' E2E_FOUNDER_PASSWORD=
 npm run test:e2e
 ```
 
+Media files for the upload tests: `npm run e2e:media` (writes `small.mp4`, `big.mp4`, `founder.png`, a 2-page `book.pdf` to `/tmp/e2emedia`, or set `E2E_MEDIA_DIR`).
+
+Against a deployed Vercel Preview: `E2E_BASE_URL=<preview URL>`, `E2E_RESEND=1` (test users get Resend test addresses `delivered+…@resend.dev`; verification and reset links are read through the Resend API with `RESEND_API_KEY`), `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD` and `E2E_FOUNDER_PASSWORD` for that Preview's database, and — when the Preview is protected by Vercel Authentication — `VERCEL_AUTOMATION_BYPASS_SECRET` (Project → Settings → Deployment Protection → Protection Bypass for Automation; never commit it). Registration helpers open the verification email automatically whenever the site requires it (`tests/e2e/helpers.ts`).
+
+Email flows (registration verification, resend, password reset, email change) run only with `E2E_MAILBOX_DIR` or `E2E_RESEND=1`: start the server with `SMTP_*` pointing at a test SMTP server that saves each message as an `.eml` file in that folder (e.g. `aiosmtpd`), leave `REQUIRE_EMAIL_VERIFICATION` empty, then `E2E_MAILBOX_DIR=<folder> npx playwright test tests/e2e/email.spec.ts`. The other specs work in both modes: with a mail source they verify new users through their email; without one, run them against a server with `REQUIRE_EMAIL_VERIFICATION=false`.
+
 Object-storage mode (behaves like Vercel): start the server with `VERCEL=1` and the `S3_*` variables pointing at a test bucket (any S3 emulator, e.g. `moto_server`, with the CORS policy from `docs/FAYL-SAQLASH.md`), and add `E2E_S3=1` to the test command. Uploads then go browser → bucket and videos are checked through the presigned redirect.
 
 Windows PowerShell: set the variables with `$env:E2E_BASE_URL="http://localhost:3000"` (one line per variable), then `npm run test:e2e`.
 
-The E2E suite signs up two users per run; the sign-up rate limit is 10 per 10 minutes per IP, so on a shared database clear it between repeated runs with `DELETE FROM "RateLimit";`.
+The E2E suite signs up users and signs in many times per run; auth rate limits (per IP: 30 sign-ins per minute, 30 sign-ups and 30 verification emails per 10 minutes — sized for students sharing one address) are stored in the database. Use a fresh database for each run, and do not point several test servers at the same database at once — or clear the limits between runs with `DELETE FROM "RateLimit";`.
 
 Results of the verification run for this delivery: [`docs/TEST_RESULTS.md`](docs/TEST_RESULTS.md).
 
@@ -251,7 +260,7 @@ docker compose up -d --build   # migrations and seed run automatically on start
 Put Nginx/Caddy in front for TLS. Keep `client_max_body_size` ≥ `MAX_VIDEO_UPLOAD_MB` and raise proxy timeouts for large uploads.
 
 ### Vercel (current production: auforex.vercel.app)
-Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md) and [docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md).
+Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md), [docs/FAYL-SAQLASH.md](docs/FAYL-SAQLASH.md), [docs/EMAIL.md](docs/EMAIL.md); isolated Preview (own database, bucket, mail): [docs/PREVIEW.md](docs/PREVIEW.md); release steps and merge blockers: [docs/RELIZ.md](docs/RELIZ.md).
 * `vercel.json` runs `npm run build:vercel` (`scripts/vercel-build.mjs`): checks required settings → **production only** `prisma migrate deploy` (never resets) → `next build`. Seed only with `SEED_ON_BUILD=true`.
 * Files live in S3-compatible object storage (Cloudflare R2). The browser uploads straight to the bucket with presigned URLs (single PUT or 10 MiB multipart parts, retries, cancel); the server verifies size and file signature on completion. Videos play through a 3-hour presigned URL issued only after the access check; books and images are served through the app (range requests ≤ 4 MiB per response). The bucket stays private. The bucket’s CORS must allow the site origin and expose `ETag`.
 * Database: a `pg` pool of 2 per function instance, `attachDatabasePool` from `@vercel/functions`; set `DATABASE_URL_POOLED` to the Prisma Postgres pooled host.
@@ -273,7 +282,7 @@ Step-by-step in Uzbek: [docs/VERCEL.md](docs/VERCEL.md) and [docs/FAYL-SAQLASH.m
 * **Uploads** are streamed (no full buffering), size-limited while streaming and validated by **magic bytes**, not by the client's file name or MIME type.
 * **Sessions:** httpOnly, `SameSite=Lax`, `Secure` on HTTPS, 30-day DB sessions (revocable; suspended users are signed out and blocked at sign-in).
 * **CSRF:** Better Auth origin checks; same-origin `Origin` check on every state-changing route handler; Server Actions are origin-checked by Next.js.
-* **Rate limiting:** database-backed limits for sign-in (15/min/IP), sign-up (10/10 min), password reset, verification and password change; in-memory limits for uploads, progress and submissions.
+* **Rate limiting:** database-backed per-IP limits for sign-in (30/min), sign-up and verification emails (30/10 min each — many students share one IP behind carrier NAT or a classroom Wi-Fi), password reset (10/10 min) and password change; in-memory limits for uploads, progress and submissions.
 * **Headers:** per-request nonce CSP (`strict-dynamic`, `frame-ancestors 'none'`, explicit frame allow-list for TradingView and video hosts), HSTS (production), `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy, Permissions-Policy, COOP.
 * **Passwords:** scrypt (Better Auth), policy enforced server-side (8–128 chars, letters + digits); reset tokens expire in 1 h, are single-use, and reset revokes other sessions; reset requests do not reveal whether an account exists.
 * **Audit log** of every sensitive admin action, with IP.
@@ -335,10 +344,10 @@ tests/              unit (Vitest), e2e (Playwright), fixtures
 | Item | Status / what is needed |
 |---|---|
 | Online payments (Click, Payme…) | Not integrated: payment happens in Telegram and the founder confirms it in the panel. Interface ready for a provider later |
-| SMTP | Code complete and tested against a local SMTP server. Needs real SMTP credentials (e.g. Gmail app password, Mailgun, Resend SMTP) |
-| Cloud object storage | S3-compatible driver implemented (tested against an S3 emulator). Needs a real Cloudflare R2 bucket + `S3_*` variables on Vercel |
+| SMTP | Code complete; verification, resend, password reset and email change pass end-to-end against a real SMTP server (local test server). Needs real SMTP credentials on Vercel ([docs/EMAIL.md](docs/EMAIL.md)); verify with Super admin → Sozlamalar → Tizim → test email |
+| Cloud object storage | S3-compatible driver implemented; direct and multipart uploads, CORS and ETag pass end-to-end against an S3 emulator that enforces CORS. Needs a real Cloudflare R2 bucket + `S3_*` variables on Vercel; verify with Super admin → Sozlamalar → Tizim → “Omborni tekshirish” (or `npm run storage:check`) |
 | Founder data | Profile text and Instagram are filled; **portrait** and optional "Ta’lim falsafasi" still need to be added in Super admin → Founder. The founder's real email should replace the placeholder `founder@auforex.local` |
-| Video lessons | None uploaded (by design). Upload them in Super admin → Darslar (category, lesson number, Free/PRO) or with `npm run videos:import` (Bunny) |
+| Video lessons | None uploaded (by design). Upload them in Super admin → Darslar (category, lesson number, Free/PRO) or in bulk with `npm run videos:import -- "<folder>" --to r2` (tested against the real R2 preview bucket) |
 | Book distribution rights | Confirm rights for the three supplied PDFs (they are published by the seed) |
 | Orphaned uploads | Files uploaded in a panel form that is then abandoned stay in storage; add a periodic cleanup job if storage space matters |
 | Multi-instance rate limiting | App-level limits (uploads/progress/submissions) are in-memory per instance; auth limits are already DB-backed |

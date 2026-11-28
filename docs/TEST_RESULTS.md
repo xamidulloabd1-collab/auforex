@@ -1,3 +1,113 @@
+# Deployed Vercel Preview — 27 November 2026 (branch `claude/final-stabilization`)
+
+Preview: `auforex-git-claude-final-st-eddf8f-hamidullos-projects-d86a2122.vercel.app` (Vercel Authentication on;
+tested through Vercel's Protection Bypass for Automation, authorized by the owner, cookie scoped to the Preview host).
+
+| Check | Result |
+|---|---|
+| Isolated database | Prisma API: `db_wlbm0xphvipstltex86glcef` “auforex-preview”, `us-east-1`, ready; connection `con_p9t8f8hrcu9o0jgd88ntsqgm` (direct `db.prisma.io`, pooled `pooled.db.prisma.io`) |
+| Fingerprints in the Preview build | direct `443e410d3d96`, pooled `443e410d3d96` — production is `85bcf18c856b`; before init all 4 migrations “not yet applied” (empty database) |
+| Migrations + seed (owner-authorized, test database only) | ✅ 4 migrations applied, seed: categories, settings, 3 bundled books, founder `asadbek`, test admin on a Resend test address; gate `PREVIEW_DB_FINGERPRINT=443e410d3d96` passed; no password in logs |
+| Guest E2E on the Preview (public pages, guests sent to sign-in, phone layout) | ✅ 3/3 |
+| Security headers | ✅ CSP (nonce, `frame-ancestors 'none'`), HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP; no `X-Powered-By` |
+| Object storage for this branch | Cloudflare R2 bucket `auforex-media-preview` (test bucket; the production bucket was not touched). Keys: R2 **temporary credentials** from the Cloudflare API (`temp-access-credentials`, scoped to this one bucket, `object-read-write`, valid until 3 Dec 2026 18:49 UTC with the owner's parent token). `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_SESSION_TOKEN` set through the Vercel API on **Preview + branch `claude/final-stabilization` only** (encrypted); values never printed |
+| Bucket CORS | only the Preview origin, methods GET/PUT/HEAD, headers `Content-Type`/`Range`, exposes `ETag`, max age 1 h; another origin is refused (checked by E2E). Lifecycle: unfinished multipart uploads are aborted after 1 day |
+| `/api/health` | ✅ 200 `ok` (was 503 `config_invalid: S3_ENDPOINT` while the keys were missing) |
+| Sign-in / registration (the 503) | ✅ fixed: wrong password → 401 “Email yoki parol noto‘g‘ri”, registration → verification email, sign-in after verification → dashboard |
+| Super admin → Sozlamalar → Tizim | ✅ storage check 5/5 (keys, write/read/delete, CORS for the site, `ETag` exposed, multipart); test email sent through Resend |
+| Uploads to R2 from the browser | ✅ image (founder portrait), PDF (book, opens in the reader), small video (single PUT), 13.5 MB video (2 × 10 MiB-part multipart, part retried after a dropped request, cancel aborts the multipart upload) |
+| Playback from R2 | ✅ `/api/lessons/<id>/video` → 302 no-store to a presigned link (`X-Amz-Security-Token`, 3 h), Range 206 `video/mp4`; bytes at the start, across the part boundary and at the end match the source file; `<video>` reaches `readyState 4` |
+| SMTP (Resend, `delivered+…@resend.dev` test addresses) | ✅ verification email, password reset email, link opens and works, test email from the Tizim tab |
+| **Full E2E on the deployed Preview** (`8d3c785`, `E2E_S3=1` real R2, `E2E_RESEND=1`) | ✅ **39/39** in 4.4 min: auth (cookies present, cross-site 403, phone), email verification / resend / password reset / email change, guest, register, PRO gate + Telegram request, admin grants PRO, range streaming + progress, PDF reader, protected files, challenges, admin-only routes, founder login + team, phone layout, TradingView, payment confirmation, every Super admin page, categories, lessons (number + category heading, multipart, duplicate number, fake MP4 refused), upload cancel/retry, FREE/PRO/guest access, founder portrait, books + check-files, Tizim storage check |
+| Re-run on `d9ea85c` (manual email confirmation added, bypass secret rotated, `effect` patched) | ✅ **40/40**: 35 in the full run + the 5 auth tests re-run after the first registration on the fresh deployment exceeded 30 s (cold start; second run 10/10 in 51 s). New: Super admin confirms an unverified email by hand → the user signs in |
+| **No-SMTP release setup** (`9596a20`; Preview with SMTP removed and `REQUIRE_EMAIL_VERIFICATION=false`, as planned for Production) | ✅ **36/36** passed, 5 email tests skipped by design (no mail service): sign-up straight to the dashboard, sign-in, “password reset temporarily unavailable” notice, all Super admin / student / R2 flows. Same suite locally (no SMTP, local disk): 36/36 |
+| Video import tool (`npm run content:import`) on the Preview | ✅ ZIP → plan (2 categories, 6 files: 1 identical file skipped, MOV + late index remuxed, HEVC re-encoded) → 5 lessons via the Super admin panel → verify: each lesson once, video 206 from R2 → publish. Second run: 0 new. 116 MB video at 26.7 MB/s |
+| Fixed during this round | file picked before the admin page finished loading was lost (upload field now picks it up); PRO-video test raced the “completed” save |
+| **Phase 1 content (28.11): first 3 lessons from Google Drive → Preview R2** | ✅ 3 × H.264 720p/AAC, 37:45–39:16, 138–146 MB; lossless remux (index to the front; identical frame counts and bitrates). Imported via the Super admin panel at 32–38 MB/s with title, category, description, level, access and a site-style cover; verify: each lesson once, video 206; re-run: 0 new. Student checks 35/35 (twice): sign-up without email, catalog + covers, playback with audio decoded, seek to the middle, progress saved + resume (1134 s), FREE/PRO lock, order rule after PRO, phone 390 px without horizontal scroll |
+| Local checks on the same commit | ✅ `npm run typecheck`, `npm run lint` (0 warnings), unit 120/120, `next build` |
+| Bulk import (`npm run videos:import -- <folder> --to r2 --yes`) | ✅ against the real bucket with a local test database: 2 lessons (single PUT + multipart) uploaded, size checked in the bucket, lessons saved as uploaded videos; second run skipped both |
+
+### Bugs found on the deployed Preview and fixed
+
+1. **R2 HEAD lost `Content-Length` inside the Next.js runtime** → every upload was reported as 0 bytes (“hajm mos emas”). The S3 client now reads the size with a one-byte ranged GET (`Content-Range`) when HEAD has no length (`lib/storage/s3.ts`, unit tests).
+2. **Temporary R2 credentials** were not supported → `S3_SESSION_TOKEN` (optional) is signed into presigned URLs and requests.
+3. **Auth rate limits** were too low for a class registering at once with verification on → per-endpoint limits.
+4. **Test harness on a protected Preview**: Playwright storage state for the access cookie, proxy for API requests, no global custom header (it broke the bucket's CORS preflight), the extra cookie in the jar instead of a raw `cookie` header (that replaced the access cookie, so Vercel answered 401), progress check independent of lessons left by earlier runs.
+
+Note: a Playwright error log printed the Preview access cookie once; it was redacted locally and never committed or posted. The owner should regenerate the Protection Bypass for Automation secret (Vercel → Project → Settings → Deployment Protection).
+
+Production deployments, variables and data were not touched.
+
+---
+
+# Test results — 26 November 2026 (final stabilization, branch `claude/final-stabilization`, base `9a5fcdc`)
+
+Environment: Linux, Node 22.23, PostgreSQL 16, Chromium (Playwright 1.65), production build (`next build` + `next start`).
+Every E2E mode ran on its **own freshly created database** (migrations + seed) — auth rate limits are stored in the
+database, so servers sharing one database interfere with each other's sign-ins.
+
+| Mode | Server settings | External services |
+|---|---|---|
+| Local disk | `REQUIRE_EMAIL_VERIFICATION=false` | — |
+| Vercel mode | `VERCEL=1` (read-only disk rules, 4 MiB response cap, pool 2), `STORAGE_DRIVER=s3` | S3 emulator (`moto_server`) with the exact CORS rule from `docs/FAYL-SAQLASH.md` (only the site origin, `GET/PUT/HEAD`, `Content-Type`/`Range`, `ExposeHeaders: ETag`); a foreign origin gets 403 |
+| Real SMTP | SMTP_* set, verification on (production default) | local SMTP server (`aiosmtpd`) with AUTH, every message saved as `.eml` and parsed by the test |
+
+## Summary
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ 0 errors |
+| `npm run lint` | ✅ 0 errors, **0 warnings** (was 5) |
+| Unit tests | ✅ **103 / 103** (21 new: R2/S3 settings parser, S3 client retries/timeouts/re-signing, live storage check against a fake bucket, SMTP TLS default, mail error classification, redirect quirks) |
+| `npm run build` | ✅ |
+| E2E, local disk | ✅ **35 / 35** (+4 email tests skipped in this mode) |
+| E2E, Vercel mode + S3 bucket | ✅ **35 / 35**; bucket afterwards: **0 unfinished multipart uploads** |
+| E2E, real SMTP | ✅ **4 / 4**: sign-up → verification email → link → verified and signed in; unverified sign-in refused with resend; forged token rejected; password reset (link single-use, old password refused, **other device signed out**, unknown address gets the same answer and no email); email change → verification to the new address |
+| SMTP unreachable (port closed) | ✅ sign-up still creates the account, “send verification” answers **503 `MAIL_SEND_FAILED`** in 0.5 s with a clear message; password reset still answers “sent” (no account enumeration) and the server log names the cause: `[mail] … yuborilmadi: Pochta serveriga ulanib bo‘lmadi (ESOCKET) …` |
+| `npm run storage:check` against the emulator | ✅ all 5 steps; wrong origin → CORS step ✗ with the rule to add; ETag not exposed → ETag step ✗; `r2.dev` endpoint → refused with the fix |
+| `npm run mail:check` | ✅ connect+login and test email; wrong password → “SMTP login yoki parol qabul qilinmadi”; closed port → connection error naming SMTP_HOST/PORT/SECURE; port 465 with empty `SMTP_SECURE` now uses TLS |
+| Database connections (Vercel mode) | ✅ 80 concurrent page/API requests → 80 × 200; at most **2** connections from the app |
+| Phone layout of the new Super admin → Tizim tab | ✅ no horizontal scroll (iPhone 13 and 1280 px) |
+| Server logs during all runs | ✅ no unexpected errors (only the deliberate foreign-origin sign-in attempt) |
+
+## Found and fixed
+
+| Problem | Effect before | Fix |
+|---|---|---|
+| `SMTP_SECURE` empty was read as `false` | Port 465 without `SMTP_SECURE=true` tried STARTTLS on a TLS port → every email hung, then failed | Empty = not set → 465 uses TLS, 587 STARTTLS |
+| No SMTP timeouts | A silent mail server held a sign-up/reset request for minutes (a Vercel function until its limit) | 10 s connect / 10 s greeting / 20 s socket |
+| Mail failure → generic 500 | “Serverda vaqtinchalik xatolik”, nothing useful in the log | `MAIL_SEND_FAILED` (503) with a clear message; log line with the classified cause, never the link |
+| `S3_ENDPOINT` accepted only `*.r2.cloudflarestorage.com` and threw from every storage call | AWS S3 / B2 / any S3 emulator impossible (so the Vercel-mode E2E could not run at `9a5fcdc`); a wrong value made `/api/health` report **“database_unavailable”** | Parser accepts R2 and S3-compatible hosts, explains r2.dev/http/path/bucket mistakes, accepts the bucket pasted at the end; health reports `storage.uploads: "config_invalid"` with the reason |
+| No timeouts/retries on S3 requests | A hung R2 connection blocked the function; one transient 5xx failed an upload/read | 20 s header timeout, 3 attempts for idempotent requests (re-signed), POST sent once |
+| Multipart parts uploaded one by one; a stalled XHR waited forever | Slow large uploads; frozen upload on a dropped connection | 4 parts in parallel, 60 s stall watchdog → retry; first final failure stops the other parts and aborts the bucket upload |
+| E2E check “preflight seen” counted only `*.r2.cloudflarestorage.com` OPTIONS events | Chromium never reports preflights as page events → the assertion could not pass in any S3 mode | The test sends the browser’s preflight itself: site origin allowed, foreign origin refused |
+| `/verify-email` said “Email tasdiqlandi” when opened directly | Misleading for unverified users | Shows the account's real state |
+| Change-email mail failure | Generic error | Old email restored, clear message |
+| Avatar removal left the file in storage | Storage leak | File deleted |
+| “PRO bekor qilish” on a FREE user | Status set to `PRO_CANCELLED` for a user who never had PRO | Refused with a message |
+| Avatar / challenge image limit 5 MB in the browser | 4.5–5 MB images failed on Vercel (4.5 MB request cap) with an unclear error | 4 MB in the browser, same as the server on Vercel |
+| `?next=/\t/evil.com` | Browsers strip tabs → `//evil.com` | Control characters and backslashes refused, origin re-checked |
+| Lesson page: 4 sequential DB queries | Extra latency per page view | Run in parallel |
+| 5 ESLint warnings (React Compiler skipped forms using `form.watch`) | Forms not memoized | `useWatch` |
+| Test fixtures | Not reproducible | `npm run e2e:media` creates them (2-page PDF, ~14 MB video = exactly 2 parts) |
+
+## New
+
+- **Super admin → Sozlamalar → Tizim**: configuration summary (no secrets), “Omborni tekshirish” (live R2 check),
+  “Menga test xat yuborish”. Covered by E2E in both storage modes.
+- `npm run storage:check`, `npm run mail:check`, `npm run e2e:media`; `npm run doctor` validates the R2 address and SMTP.
+- `/api/health` reports `mail: {configured, verificationRequired}`.
+- Docs: `docs/EMAIL.md`, `docs/RELIZ.md` (release and deployment steps, rollback), updates to `FAYL-SAQLASH.md`, `VERCEL.md`, README.
+
+**Observed once, not reproduced:** in one intermediate local-disk run “founder portrait: upload …” did not see
+“Portret yuklangan” within 30 s (the screenshot was lost when the next run cleaned `test-results`). The same upload
+done by hand and the same test in the next three full runs (local and S3) passed.
+
+**Not tested (no access from the test environment):** a real Cloudflare R2 bucket, a real email provider, the live
+site auforex.vercel.app. Use Super admin → Sozlamalar → Tizim after deploying (docs/PREVIEW.md, then docs/RELIZ.md section 4).
+
+---
+
 # Test results — 23 November 2026, round 2 (local sign-in 503, database timeouts, missing package)
 
 The three reported errors were reproduced on a `next dev` server **before** changing code, then re-tested after the fix.

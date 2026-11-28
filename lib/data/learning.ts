@@ -232,27 +232,31 @@ export async function getLessonForViewer(slug: string, opts: { userId: string; i
   const visible = lesson.isPublished && lesson.course.isPublished;
   if (!visible && !opts.isAdmin) return null;
 
-  const ordered = await prisma.lesson.findMany({
-    where: opts.isAdmin && !visible ? { courseId: lesson.course.id } : publishedLessonWhere,
-    orderBy: lessonOrder,
-    select: { id: true, slug: true, title: true, durationSeconds: true, courseId: true, order: true, isFree: true },
-  });
+  // Independent reads run together (one round trip instead of four on a slow serverless connection).
+  const [ordered, progress, courseProgress, access] = await Promise.all([
+    prisma.lesson.findMany({
+      where: opts.isAdmin && !visible ? { courseId: lesson.course.id } : publishedLessonWhere,
+      orderBy: lessonOrder,
+      select: { id: true, slug: true, title: true, durationSeconds: true, courseId: true, order: true, isFree: true },
+    }),
+    prisma.lessonProgress.findUnique({
+      where: { userId_lessonId: { userId: opts.userId, lessonId: lesson.id } },
+      select: { positionSeconds: true, percent: true, completedAt: true },
+    }),
+    prisma.lessonProgress.findMany({
+      where: { userId: opts.userId, lesson: { courseId: lesson.course.id } },
+      select: { lessonId: true, completedAt: true, percent: true },
+    }),
+    opts.isAdmin ? null : getSetting("access"),
+  ]);
   const index = ordered.findIndex((l) => l.id === lesson.id);
   // PRO lessons need PRO (or admin); free lessons are open to every signed-in user.
   const canWatch = opts.isAdmin || opts.hasPremium || lesson.isFree;
-  const progress = await prisma.lessonProgress.findUnique({
-    where: { userId_lessonId: { userId: opts.userId, lessonId: lesson.id } },
-    select: { positionSeconds: true, percent: true, completedAt: true },
-  });
   const courseLessons = ordered.filter((l) => l.courseId === lesson.course.id);
-  const courseProgress = await prisma.lessonProgress.findMany({
-    where: { userId: opts.userId, lessonId: { in: courseLessons.map((l) => l.id) } },
-    select: { lessonId: true, completedAt: true, percent: true },
-  });
   const cp = new Map(courseProgress.map((p) => [p.lessonId, p]));
 
   // Sequential mode (Super admin → Sozlamalar → Kirish): admins are never locked out.
-  const sequential = !opts.isAdmin && (await getSetting("access")).sequentialLessons;
+  const sequential = Boolean(access?.sequentialLessons);
   const sequence = courseLessons
     .filter((l) => opts.isAdmin || opts.hasPremium || l.isFree)
     .map((l) => ({ ...l, completed: Boolean(cp.get(l.id)?.completedAt) }));

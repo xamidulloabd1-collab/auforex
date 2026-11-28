@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { checkEnv } from "@/lib/env";
+import { emailVerificationRequired } from "@/lib/env-schema";
 import { getEnvValue } from "../../scripts/lib/env-file.mjs";
 
 /** Parses .env.example the way dotenv would (KEY="value" lines). */
@@ -42,5 +43,30 @@ describe(".env.example works as-is after `npm run setup`", () => {
     const result = checkEnv({ DATABASE_URL: "", BETTER_AUTH_SECRET: "" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues.join(" ")).toMatch(/DATABASE_URL is required[\s\S]*BETTER_AUTH_SECRET is required/);
+  });
+
+  it("rejects incomplete SMTP settings without requiring SMTP in unrelated deployments", () => {
+    const result = checkEnv({
+      DATABASE_URL: "postgresql://x",
+      BETTER_AUTH_SECRET: "x".repeat(48),
+      SMTP_HOST: "smtp.example.com",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues.join(" ")).toContain("MAIL_FROM");
+  });
+
+  it("allows a sender placeholder without enabling an SMTP transport", () => {
+    const result = checkEnv({
+      DATABASE_URL: "postgresql://x",
+      BETTER_AUTH_SECRET: "x".repeat(48),
+      MAIL_FROM: "AU Forex Academy <no-reply@example.com>",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("requires verification by default in production unless explicitly disabled", () => {
+    expect(emailVerificationRequired({ NODE_ENV: "production", REQUIRE_EMAIL_VERIFICATION: undefined }, false)).toBe(true);
+    expect(emailVerificationRequired({ NODE_ENV: "production", REQUIRE_EMAIL_VERIFICATION: "false" }, false)).toBe(false);
+    expect(emailVerificationRequired({ NODE_ENV: "test", REQUIRE_EMAIL_VERIFICATION: undefined }, false)).toBe(false);
   });
 });

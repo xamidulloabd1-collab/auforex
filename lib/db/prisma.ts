@@ -2,6 +2,7 @@ import "server-only";
 import { attachDatabasePool } from "@vercel/functions";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { previewDatabaseMismatch } from "../../scripts/lib/db-identity.mjs";
 import { PrismaClient } from "./generated/client";
 
 /**
@@ -10,8 +11,8 @@ import { PrismaClient } from "./generated/client";
  * Vercel runs many instances at once; each keeps its own pool, so the total number of database
  * connections is roughly (instances × pool size). Prisma Postgres answers "P2037: Too many
  * database connections opened" when that total passes its limit. Therefore:
- *  - app traffic uses the pooled address when the host provides one (DATABASE_URL_POOLED from
- *    the Prisma Postgres integration); migrations keep the direct DATABASE_URL (prisma.config.ts);
+ *  - app traffic uses DATABASE_URL_POOLED when provided; on Vercel, a direct Prisma Postgres
+ *    host is automatically switched to its pooled hostname. Migrations keep DATABASE_URL;
  *  - the pool is small on Vercel (2 by default, DB_POOL_MAX to change) and idle connections are
  *    closed after 5 s;
  *  - attachDatabasePool lets Vercel keep a suspended instance alive just long enough to close
@@ -22,13 +23,40 @@ type Instance = PrismaClient;
 const globalForPrisma = globalThis as unknown as { prisma?: Instance; prismaPool?: Pool; prismaUrl?: string };
 
 export function runtimeDatabaseUrl(source: Record<string, string | undefined> = process.env) {
-  return source.DATABASE_URL_POOLED || source.DATABASE_URL || undefined;
+  const pooled = source.DATABASE_URL_POOLED?.trim();
+  if (pooled) return pooled;
+
+  const direct = source.DATABASE_URL?.trim();
+  if (!direct) return undefined;
+  if (source.VERCEL !== "1") return direct;
+  return prismaPooledUrl(direct) ?? direct;
+}
+
+function prismaPooledUrl(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || url.hostname !== "db.prisma.io") return undefined;
+    url.hostname = "pooled.db.prisma.io";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export function usesPooledDatabase(source: Record<string, string | undefined> = process.env) {
+  if (source.DATABASE_URL_POOLED?.trim()) return true;
+  const direct = source.DATABASE_URL?.trim();
+  return source.VERCEL === "1" && Boolean(direct && prismaPooledUrl(direct));
 }
 
 /** "host:port/database (VARIABLE)" of the database the site uses — never the login or password. */
 export function databaseTarget(source: Record<string, string | undefined> = process.env) {
-  const key = source.DATABASE_URL_POOLED ? "DATABASE_URL_POOLED" : "DATABASE_URL";
-  const raw = source[key];
+  const raw = runtimeDatabaseUrl(source);
+  const key = source.DATABASE_URL_POOLED?.trim()
+    ? "DATABASE_URL_POOLED"
+    : usesPooledDatabase(source) && source.DATABASE_URL?.trim()
+      ? "DATABASE_URL (pooled)"
+      : "DATABASE_URL";
   if (!raw) return `${key} o‘rnatilmagan`;
   try {
     const u = new URL(raw);
@@ -70,6 +98,12 @@ function createPrismaClient(pool: Pool): Instance {
 }
 
 export function getPrisma(): Instance {
+  // A Preview whose two database variables point at different databases (e.g. a test database
+  // for migrations but the production one for the app) must not connect at all.
+  if (process.env.VERCEL_ENV === "preview") {
+    const mismatch = previewDatabaseMismatch(process.env);
+    if (mismatch) throw new Error(mismatch);
+  }
   const url = runtimeDatabaseUrl();
   if (globalForPrisma.prisma && globalForPrisma.prismaUrl !== url) {
     // The database address changed while the server was running (an .env file edited during

@@ -54,7 +54,7 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/super-
             <dt className="text-muted-foreground">Holat</dt>
             <dd>{user.status === "ACTIVE" ? <Badge variant="success">Faol</Badge> : <Badge variant="destructive">Bloklangan</Badge>}</dd>
             <dt className="text-muted-foreground">Email</dt>
-            <dd>{user.emailVerified ? "Tasdiqlangan" : "Tasdiqlanmagan"}</dd>
+            <dd data-testid="admin-email-status">{user.emailVerified ? "Tasdiqlangan" : "Tasdiqlanmagan"}</dd>
             <dt className="text-muted-foreground">Telegram</dt>
             <dd>{user.profile?.telegram ? `@${user.profile.telegram}` : "—"}</dd>
             <dt className="text-muted-foreground">Ro‘yxatdan o‘tgan</dt>
@@ -84,7 +84,7 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/super-
         </SettingsCard>
 
         <SettingsCard title="Hisobni boshqarish">
-          <AccountControls userId={user.id} status={user.status} role={user.role} isSelf={user.id === admin.id} />
+          <AccountControls userId={user.id} status={user.status} role={user.role} isSelf={user.id === admin.id} emailVerified={Boolean(user.emailVerified)} />
         </SettingsCard>
       </div>
     </>

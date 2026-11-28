@@ -14,7 +14,11 @@ export type S3Config = {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /** Temporary credentials only (R2 Temporary Credentials API, AWS STS): sent as X-Amz-Security-Token. */
+  sessionToken?: string;
 };
+
+type SigningConfig = Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey" | "sessionToken">;
 
 const sha256Hex = (data: string | Uint8Array) => createHash("sha256").update(data).digest("hex");
 const hmac = (key: string | Buffer, data: string) => createHmac("sha256", key).update(data).digest();
@@ -51,7 +55,7 @@ type SignInput = {
   query: Record<string, string>;
   payloadHash: string;
   date: string; // amzDate
-  config: Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey">;
+  config: SigningConfig;
 };
 
 function signature({ method, url, headers, query, payloadHash, date, config }: SignInput) {
@@ -76,7 +80,7 @@ function signature({ method, url, headers, query, payloadHash, date, config }: S
 
 /** Presigned URL (query-string authentication). `headers` are headers the client must send exactly. */
 export function presignUrl(
-  config: S3Config | Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey">,
+  config: S3Config | SigningConfig,
   method: string,
   rawUrl: string,
   opts: { expiresSeconds: number; query?: Record<string, string>; headers?: Record<string, string>; now?: Date },
@@ -95,6 +99,8 @@ export function presignUrl(
     "X-Amz-Date": date,
     "X-Amz-Expires": String(Math.max(1, Math.min(604800, Math.floor(opts.expiresSeconds)))),
     "X-Amz-SignedHeaders": signedHeaders,
+    // Temporary credentials: the session token is part of the signed query.
+    ...(config.sessionToken ? { "X-Amz-Security-Token": config.sessionToken } : {}),
   };
   const { sig } = signature({ method, url, headers, query, payloadHash: "UNSIGNED-PAYLOAD", date, config });
   return `${url.origin}${url.pathname}?${canonicalQuery(query)}&X-Amz-Signature=${sig}`;
@@ -102,7 +108,7 @@ export function presignUrl(
 
 /** Authorization-header signing for server-side requests. */
 export function signHeaders(
-  config: Pick<S3Config, "region" | "accessKeyId" | "secretAccessKey">,
+  config: SigningConfig,
   method: string,
   rawUrl: string,
   opts: { headers?: Record<string, string>; payloadHash: string; now?: Date },
@@ -115,6 +121,7 @@ export function signHeaders(
     host: url.host,
     "x-amz-content-sha256": opts.payloadHash,
     "x-amz-date": date,
+    ...(config.sessionToken ? { "x-amz-security-token": config.sessionToken } : {}),
     ...(opts.headers ?? {}),
   };
   const { sig, scope, signedHeaders } = signature({ method, url, headers, query, payloadHash: opts.payloadHash, date, config });
@@ -138,6 +145,11 @@ export class S3Error extends Error {
   }
 }
 
+/** Time allowed until the bucket answers (headers), per attempt. */
+export const S3_TIMEOUT_MS = 20_000;
+const S3_ATTEMPTS = 3;
+const pause = (attempt: number) => new Promise((r) => setTimeout(r, 250 * 2 ** (attempt - 1)));
+
 const xmlValue = (xml: string, tag: string) => xml.match(new RegExp(`<${tag}>([^<]*)</${tag}>`))?.[1] ?? null;
 const xmlEscape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -148,24 +160,79 @@ export class S3Client {
     return `${this.config.endpoint.replace(/\/$/, "")}/${uriEncode(this.config.bucket)}/${uriEncode(key, true)}`;
   }
 
+  /**
+   * Signed request. The response headers must arrive within `S3_TIMEOUT_MS` (a hung bucket
+   * connection would otherwise hold a serverless function until its time limit); streaming the
+   * body afterwards is not limited. Idempotent requests (GET/HEAD/PUT/DELETE) are retried on
+   * network errors, timeouts and 5xx answers; POST (create/complete multipart) is sent once.
+   */
   private async send(method: string, url: string, opts: { headers?: Record<string, string>; body?: string | Uint8Array } = {}) {
     const body = opts.body;
     const payloadHash = body === undefined ? sha256Hex("") : sha256Hex(body);
-    const headers = signHeaders(this.config, method, url, { headers: opts.headers, payloadHash });
-    const res = await fetch(url, { method, headers, body: body as BodyInit | undefined, cache: "no-store" });
-    if (!res.ok && res.status !== 206) {
+    const attempts = method === "POST" ? 1 : S3_ATTEMPTS;
+    for (let attempt = 1; ; attempt++) {
+      // Signed per attempt: the signature carries the request time.
+      const headers = signHeaders(this.config, method, url, { headers: opts.headers, payloadHash });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), S3_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(url, { method, headers, body: body as BodyInit | undefined, cache: "no-store", signal: controller.signal });
+      } catch (err) {
+        clearTimeout(timer);
+        if (attempt < attempts) {
+          await pause(attempt);
+          continue;
+        }
+        const timedOut = controller.signal.aborted;
+        throw new S3Error(
+          timedOut ? 504 : 503,
+          timedOut ? "Timeout" : "NetworkError",
+          timedOut ? `S3 ${method}: ${S3_TIMEOUT_MS / 1000} s ichida javob kelmadi` : `S3 ${method}: ulanib bo‘lmadi (${(err as Error)?.message ?? err})`,
+        );
+      }
+      clearTimeout(timer);
+      if (res.ok || res.status === 206) return res;
+      if (res.status >= 500 && attempt < attempts) {
+        await res.body?.cancel().catch(() => {});
+        await pause(attempt);
+        continue;
+      }
       const text = method === "HEAD" ? "" : await res.text().catch(() => "");
       throw new S3Error(res.status, xmlValue(text, "Code") ?? String(res.status), xmlValue(text, "Message") ?? `S3 ${method} ${res.status}`);
     }
-    return res;
   }
 
   async head(key: string): Promise<{ size: number; contentType: string | null } | null> {
     try {
       const res = await this.send("HEAD", this.objectUrl(key));
-      return { size: Number(res.headers.get("content-length") ?? 0), contentType: res.headers.get("content-type") };
+      const contentType = res.headers.get("content-type");
+      const length = res.headers.get("content-length");
+      if (length !== null && length !== "") return { size: Number(length), contentType };
+      // Inside Next.js (server actions, route handlers — also on Vercel) the HEAD answer from R2 arrives
+      // without Content-Length, which read as 0 bytes and failed every upload's size check. Ask for one
+      // byte instead: the total size is in Content-Range ("bytes 0-0/<size>").
+      return { size: await this.sizeByRange(key), contentType };
     } catch (err) {
-      if (err instanceof S3Error && (err.status === 404 || err.status === 403)) return null;
+      if (err instanceof S3Error && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Object size from a one-byte ranged GET (Content-Range total); 0 for an empty object. */
+  private async sizeByRange(key: string): Promise<number> {
+    try {
+      const res = await this.send("GET", this.objectUrl(key), { headers: { range: "bytes=0-0" } });
+      await res.body?.cancel().catch(() => {});
+      const total = /\/(\d+)\s*$/.exec(res.headers.get("content-range") ?? "")?.[1];
+      if (total) return Number(total);
+      // A full 200 answer (range ignored): its length is the object size.
+      const length = res.headers.get("content-length");
+      if (res.status === 200 && length) return Number(length);
+      throw new S3Error(502, "NoObjectSize", "S3 did not report the object size");
+    } catch (err) {
+      // An empty object cannot satisfy "bytes=0-0".
+      if (err instanceof S3Error && err.status === 416) return 0;
       throw err;
     }
   }

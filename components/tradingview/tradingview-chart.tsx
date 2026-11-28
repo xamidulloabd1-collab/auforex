@@ -26,7 +26,6 @@ export const INTERVALS = [
   { value: "W", label: "1W" },
 ] as const;
 
-const SCRIPT_SRC = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
 const LOAD_TIMEOUT_MS = 12_000;
 
 type Status = "loading" | "ready" | "error";
@@ -42,68 +41,35 @@ export function TradingViewChart() {
   const symbol = hydrated ? prefs.symbol : "FX:EURUSD";
   const interval = hydrated ? prefs.interval : "60";
   const { setSymbol, setInterval } = prefs;
-  const [status, setStatus] = React.useState<Status>("loading");
   const [attempt, setAttempt] = React.useState(0);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!hydrated) return;
-    const container = containerRef.current;
-    if (!container) return;
-    container.innerHTML = "";
-
-    const widget = document.createElement("div");
-    widget.className = "tradingview-widget-container__widget";
-    widget.style.height = "100%";
-    widget.style.width = "100%";
-    container.appendChild(widget);
-
-    const script = document.createElement("script");
-    script.src = SCRIPT_SRC;
-    script.type = "text/javascript";
-    script.async = true;
-    script.innerHTML = JSON.stringify({
-      autosize: true,
+  const [loadedKey, setLoadedKey] = React.useState<string | null>(null);
+  const [failedKey, setFailedKey] = React.useState<string | null>(null);
+  const embedUrl = React.useMemo(() => {
+    const params = new URLSearchParams({
+      frameElementId: "tradingview_advanced_chart",
       symbol,
       interval,
       timezone: "Asia/Tashkent",
       theme: "dark",
       style: "1",
       locale: "en",
-      backgroundColor: "#0C111B",
-      gridColor: "rgba(31, 42, 61, 0.6)",
-      allow_symbol_change: true,
-      save_image: false,
-      calendar: false,
-      hide_volume: false,
-      support_host: "https://www.tradingview.com",
+      hidesidetoolbar: "0",
+      symboledit: "1",
+      saveimage: "0",
+      hideideas: "1",
     });
+    return `https://s.tradingview.com/widgetembed/?${params.toString()}`;
+  }, [symbol, interval]);
 
-    let settled = false;
-    queueMicrotask(() => setStatus("loading"));
-    const finish = (s: Status) => {
-      if (settled) return;
-      settled = true;
-      setStatus(s);
-    };
-    script.onerror = () => finish("error");
+  const instanceKey = `${embedUrl}:${attempt}`;
+  const status: Status = loadedKey === instanceKey ? "ready" : failedKey === instanceKey ? "error" : "loading";
 
-    const observer = new MutationObserver(() => {
-      const iframe = container.querySelector("iframe");
-      if (iframe) {
-        iframe.addEventListener("load", () => finish("ready"), { once: true });
-      }
-    });
-    observer.observe(container, { childList: true, subtree: true });
-    const timer = window.setTimeout(() => finish(container.querySelector("iframe") ? "ready" : "error"), LOAD_TIMEOUT_MS);
-
-    container.appendChild(script);
-    return () => {
-      observer.disconnect();
-      window.clearTimeout(timer);
-      container.innerHTML = "";
-    };
-  }, [hydrated, symbol, interval, attempt]);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFailedKey(instanceKey);
+    }, LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [instanceKey]);
 
   const current = INSTRUMENTS.find((i) => i.symbol === symbol);
   const externalUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
@@ -154,7 +120,18 @@ export function TradingViewChart() {
       </div>
 
       <div className="relative h-[62vh] min-h-[380px] bg-[#0C111B] md:h-[640px]">
-        <div ref={containerRef} className="tradingview-widget-container absolute inset-0" />
+        <iframe
+          key={instanceKey}
+          id="tradingview_advanced_chart"
+          src={embedUrl}
+          title={`TradingView ${current?.label ?? "chart"}`}
+          className="absolute inset-0 size-full border-0"
+          loading="lazy"
+          allow="autoplay; fullscreen"
+          allowFullScreen
+          onLoad={() => setLoadedKey(instanceKey)}
+          onError={() => setFailedKey(instanceKey)}
+        />
         {status === "loading" && (
           <div className="pointer-events-none absolute inset-0 grid gap-3 p-6" aria-live="polite">
             <span className="sr-only">Grafik yuklanmoqda…</span>

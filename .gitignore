@@ -29,8 +29,15 @@ next-env.d.ts
 *.log
 
 # e2e storage
-/.e2e-storage
+/.e2e-storage*
 
 .vercel
 .env*.local
 backups/
+
+# video import working folder (archives, videos, plan, ledger)
+/content-import
+
+# database backups (personal data) and their connection settings
+/backups
+.env.backup

@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/db/prisma";
 import { checkEnv } from "@/lib/env";
 import { ModelName } from "@/lib/db/generated/internal/prismaNamespaceBrowser";
-import { appUrl } from "@/lib/env";
+import { appUrl, env, isMailConfigured } from "@/lib/env";
+import { emailVerificationRequired } from "@/lib/env-schema";
 import { storageStatus } from "@/lib/storage";
-import { poolSize } from "@/lib/db/prisma";
+import { poolSize, usesPooledDatabase } from "@/lib/db/prisma";
 
 /** Which address sign-in links use, and whether this request came to the same one (no secrets). */
 function siteReport(request: Request) {
@@ -28,13 +29,13 @@ function connectionFailure(err: unknown): "timeout" | "auth" | "dns" | "refused"
   if (/password authentication failed|28P01|Authentication failed|P1000/i.test(text)) return "auth";
   if (/ENOTFOUND|EAI_AGAIN/i.test(text)) return "dns";
   if (/ECONNREFUSED/i.test(text)) return "refused";
-  if (/DATABASE_URL is not set/i.test(text)) return "config";
+  if (/DATABASE_URL is not set|Preview: DATABASE_URL/i.test(text)) return "config";
   return "other";
 }
 
 /** Connection mode only — never the address or credentials. */
 function databaseReport() {
-  const pooled = Boolean(process.env.DATABASE_URL_POOLED);
+  const pooled = usesPooledDatabase();
   let directPrismaPostgres = false;
   try {
     directPrismaPostgres = !pooled && new URL(process.env.DATABASE_URL ?? "").hostname === "db.prisma.io";
@@ -50,7 +51,13 @@ function databaseReport() {
 
 function storageReport() {
   const s = storageStatus();
+  // A wrong S3_* value is named (the message never contains keys); uploads stay off until fixed.
+  if (s.error) return { driver: s.driver, uploads: "config_invalid", error: s.error };
   return { driver: s.driver, uploads: s.uploads ? "ok" : "not_configured" };
+}
+
+function mailReport() {
+  return { configured: isMailConfigured(), verificationRequired: emailVerificationRequired(env(), isMailConfigured()) };
 }
 
 /**
@@ -93,7 +100,7 @@ export async function GET(request: Request) {
         { status: 503, headers },
       );
     }
-    return Response.json({ status: "ok", migrationsApplied, site: siteReport(request), database: databaseReport(), storage: storageReport() }, { headers });
+    return Response.json({ status: "ok", migrationsApplied, site: siteReport(request), database: databaseReport(), storage: storageReport(), mail: mailReport() }, { headers });
   } catch (err) {
     console.error("[health] database check failed", err);
     return Response.json(

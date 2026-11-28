@@ -62,3 +62,13 @@ describe("safe redirects", () => {
     expect(safeRedirectPath(null)).toBe("/dashboard");
   });
 });
+
+describe("safe redirects — browser URL quirks", () => {
+  it("rejects paths a browser would turn into another site", () => {
+    expect(safeRedirectPath("/\t/evil.com")).toBe("/dashboard");
+    expect(safeRedirectPath("/\n/evil.com")).toBe("/dashboard");
+    expect(safeRedirectPath("/a\\b")).toBe("/dashboard");
+    expect(safeRedirectPath("/lessons?x=1#y")).toBe("/lessons?x=1#y");
+    expect(safeRedirectPath("/books/%2F%2Fevil.com")).toBe("/books/%2F%2Fevil.com");
+  });
+});

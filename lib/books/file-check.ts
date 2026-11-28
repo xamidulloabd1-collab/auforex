@@ -35,6 +35,37 @@ async function seededFiles() {
   );
 }
 
+function findSeededFile(seeded: Awaited<ReturnType<typeof seededFiles>>, fileSize: number) {
+  return seeded.find((file) => file.size === fileSize) ?? null;
+}
+
+type SeededBookAssetRecord = { id: string; fileKey: string; fileSize: number; coverKey: string | null };
+
+export function relinkMissingSeededBookAsset(book: SeededBookAssetRecord, asset: "file"): Promise<string>;
+export function relinkMissingSeededBookAsset(book: SeededBookAssetRecord, asset: "cover"): Promise<string | null>;
+export async function relinkMissingSeededBookAsset(
+  book: SeededBookAssetRecord,
+  asset: "file" | "cover",
+) {
+  const key = asset === "file" ? book.fileKey : book.coverKey;
+  if (!key) return key;
+
+  const storage = getStorage();
+  if (await storage.stat(key)) return key;
+
+  const match = findSeededFile(await seededFiles(), book.fileSize);
+  const replacement = asset === "file"
+    ? match && `bundled/books/${match.file}`
+    : match?.cover && `bundled/covers/${match.cover}`;
+  if (!replacement || !(await storage.stat(replacement))) return key;
+
+  await prisma.book.update({
+    where: { id: book.id },
+    data: asset === "file" ? { fileKey: replacement } : { coverKey: replacement },
+  });
+  return replacement;
+}
+
 export async function checkBookFiles(): Promise<BookFileReport[]> {
   const storage = getStorage();
   const seeded = await seededFiles();
@@ -44,7 +75,7 @@ export async function checkBookFiles(): Promise<BookFileReport[]> {
   });
   const report: BookFileReport[] = [];
   for (const b of books) {
-    const match = seeded.find((s) => s.size === b.fileSize) ?? null;
+    const match = findSeededFile(seeded, b.fileSize);
     let file: BookFileReport["file"] = (await storage.stat(b.fileKey)) ? "ok" : "missing";
     let cover: BookFileReport["cover"] = !b.coverKey ? "none" : (await storage.stat(b.coverKey)) ? "ok" : "missing";
     const data: { fileKey?: string; coverKey?: string | null } = {};

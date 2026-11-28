@@ -44,11 +44,27 @@ Fayl hajmi 0 bo‘lmasligi kerak. Qayta tiklash (faqat zarurat bo‘lsa): `pg_re
 | `BETTER_AUTH_SECRET` | 32+ belgili tasodifiy satr: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. **O‘zgartirmang** — o‘zgarsa hamma tizimdan chiqib ketadi |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Fayl ombori — [FAYL-SAQLASH.md](FAYL-SAQLASH.md). Busiz video/kitob/rasm yuklab bo‘lmaydi |
 
+**Production’da email oqimlari uchun majburiy** (provayder tanlash va tekshirish: [EMAIL.md](EMAIL.md))
+
+Ro‘yxatdan o‘tishni email orqali tasdiqlash va parolni tiklash uchun SMTP’ni Vercel’da **Production** va **Preview** muhitlariga alohida sozlang. SMTP yo‘q production’da tasdiqlash talab qilinadi va yangi ro‘yxatdan o‘tish aniq `503 MAIL_NOT_CONFIGURED` xatosi bilan to‘xtaydi; parol tiklash ham xat yubormasdan muvaffaqiyat ko‘rsatmaydi.
+
+| Nom | Qiymat |
+|---|---|
+| `SMTP_HOST` | Email provayder bergan SMTP server manzili |
+| `SMTP_PORT` | Provayder porti; odatda `587` (STARTTLS) yoki `465` (TLS) |
+| `SMTP_SECURE` | Bo‘sh qoldiring: `465` → TLS, `587` → STARTTLS avtomatik tanlanadi. Provayder boshqacha talab qilsa `true`/`false` |
+| `SMTP_USER` | Provayder SMTP login’i; autentifikatsiya talab qilinmasa bo‘sh |
+| `SMTP_PASSWORD` | SMTP paroli/API kaliti; `SMTP_USER` bilan birga yoki ikkalasi ham bo‘sh |
+| `MAIL_FROM` | Provayderda tasdiqlangan yuboruvchi, masalan `AU Forex Academy <no-reply@auforex.uz>` |
+| `REQUIRE_EMAIL_VERIFICATION` | Tavsiya: bo‘sh qoldiring (SMTP mavjud bo‘lsa yoqiladi, Production’da esa standart holatda talab qilinadi). Faqat tasdiqlashni ongli ravishda o‘chirish uchun `false` |
+
+Provayder boshqaruv panelida yuboruvchi domenni tasdiqlab, ko‘rsatilgan SPF/DKIM DNS yozuvlarini qo‘shing. Preview’da faqat o‘zingiz boshqaradigan test mailbox manziliga yuborishni sinang; haqiqiy foydalanuvchilarga sinov xati yubormang. Parol/API kalitini chatga, Git’ga yoki `.env.example` fayliga kiritmang. SMTP sozlamalarini qo‘shish yoki o‘zgartirish Vercel Production muhitini o‘zgartiradi; avval ruxsat oling, so‘ng redeploy qiling.
+
 **Tavsiya etiladi**
 
 | Nom | Qiymat |
 |---|---|
-| `DATABASE_URL_POOLED` | `DATABASE_URL` bilan bir xil, faqat host `pooled.db.prisma.io`. Sayt so‘rovlari pooler orqali o‘tadi — “Too many connections” (P2037) qaytmaydi. Migratsiyalar baribir to‘g‘ridan-to‘g‘ri ulanishdan foydalanadi |
+| `DATABASE_URL_POOLED` | Ixtiyoriy override: `DATABASE_URL` bilan bir xil, faqat host `pooled.db.prisma.io`. Vercel’da bu o‘rnatilmasa va `DATABASE_URL` hosti `db.prisma.io` bo‘lsa, ilova pooler hostini avtomatik ishlatadi. Migratsiyalar baribir to‘g‘ridan-to‘g‘ri `DATABASE_URL`dan foydalanadi |
 | `NEXT_PUBLIC_APP_URL` va `BETTER_AUTH_URL` | `https://auforex.vercel.app` (o‘z domeningiz bo‘lsa — u). Email havolalari shu manzilga ketadi. Yo‘q bo‘lsa, Vercel’ning production manzili olinadi |
 | `TRUSTED_ORIGINS` | Saytga boshqa manzildan ham kirilsa (masalan `www.` varianti), vergul bilan |
 
@@ -62,8 +78,7 @@ Fayl hajmi 0 bo‘lmasligi kerak. Qayta tiklash (faqat zarurat bo‘lsa): `pg_re
 | `MIGRATE_ON_BUILD` | `false` — production deploy’da migratsiyani o‘tkazib yuborish; `true` — preview’da ham qo‘llash |
 | `SEED_ON_BUILD` | `true` — deploy’da seed (kategoriyalar, sozlamalar, asoschi akkaunti). Mavjud ma’lumotlarni o‘chirmaydi, lekin odatda kerak emas |
 | `FOUNDER_PASSWORD` | Faqat seed asoschi akkauntini **birinchi marta** yaratganda. Mavjud parolni o‘zgartirmaydi |
-| `SMTP_*`, `MAIL_FROM` | Parolni tiklash xatlari uchun |
-| `MAX_VIDEO_UPLOAD_MB`, `MAX_BOOK_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB` | Yuklash chegaralari (2048 / 100 / 5) |
+| `MAX_VIDEO_UPLOAD_MB`, `MAX_BOOK_UPLOAD_MB`, `MAX_IMAGE_UPLOAD_MB` | Yuklash chegaralari (2048 / 100 / 5). Avatar va challenge skrinshoti Vercel’da baribir 4 MB gacha (bitta so‘rov chegarasi) |
 
 O‘zgaruvchini qo‘shgach yoki o‘zgartirgach: **Deployments → oxirgi deploy → ⋯ → Redeploy**.
 
@@ -77,14 +92,19 @@ O‘zgaruvchini qo‘shgach yoki o‘zgartirgach: **Deployments → oxirgi deplo
    {"status":"ok","migrationsApplied":4,
     "site":{"url":"https://auforex.vercel.app","https":true,"matchesRequest":true},
     "database":{"pooled":true,"poolMax":2},
-    "storage":{"driver":"s3","uploads":"ok"}}
+    "storage":{"driver":"s3","uploads":"ok"},
+    "mail":{"configured":true,"verificationRequired":true}}
    ```
    - `migrationsApplied` — bazadagi migratsiyalar soni (shu versiyada kamida 4).
-   - `database.hint` chiqsa — `DATABASE_URL_POOLED` qo‘shing.
-   - `storage.uploads: "not_configured"` — S3_* kiritilmagan.
-3. Brauzerda: chiqib, qayta kiring (email va login bilan) → Dashboard ochilsin; telefondan ham.
-4. Super admin → Darslar / Kategoriyalar / Kitoblar ochilsin; kichik video yuklab, saqlab, dars sahifasida ko‘ring.
-5. Kitoblar → biror kitobni oching (PDF sahifalari ko‘rinsin).
+   - `database.hint` chiqsa — `DATABASE_URL_POOLED` yoki Prisma Postgres pooler hostini tekshiring.
+   - `storage.uploads: "not_configured"` — S3_* kiritilmagan; `"config_invalid"` — qiymat noto‘g‘ri yozilgan (`error` da sababi).
+   - `mail.configured: false` — SMTP kiritilmagan: ro‘yxatdan o‘tish va parol tiklash ishlamaydi ([EMAIL.md](EMAIL.md)).
+3. **Super admin → Sozlamalar → Tizim**: “Omborni tekshirish” (R2 kalitlari, CORS, ETag, multipart) va
+   “Menga test xat yuborish” (SMTP). Ikkalasi ham ✓ bo‘lishi kerak.
+4. Brauzerda: chiqib, qayta kiring (email va login bilan) → Dashboard ochilsin; telefondan ham.
+5. Super admin → Darslar / Kategoriyalar / Kitoblar ochilsin; kichik video yuklab, saqlab, dars sahifasida ko‘ring.
+6. Kitoblar → biror kitobni oching (PDF sahifalari ko‘rinsin).
+7. Asoschi yoki kitob muqovasi rasmi `/_next/image` orqali optimallashtirilib ochilishini tekshiring.
 
 ## Kirishda xato chiqsa
 

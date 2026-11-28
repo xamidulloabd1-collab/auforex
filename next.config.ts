@@ -38,6 +38,8 @@ const nextConfig: NextConfig = {
     // Keys are globs ([id] would be a character class), hence the wildcards.
     "/api/books/*/file": ["./prisma/seed-assets/books/**/*"],
     "/api/media/**": ["./prisma/seed-assets/covers/**/*"],
+    // The image optimizer loads Sharp dynamically; include its native runtime files in server traces.
+    "/*": ["./node_modules/sharp/**/*"],
     // "Fayllarni tekshirish" in Super admin → Kitoblar relinks seeded books to these copies.
     "/super-admin/books": ["./prisma/seed-assets/**/*"],
   },

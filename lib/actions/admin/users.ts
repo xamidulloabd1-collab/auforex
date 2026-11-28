@@ -56,6 +56,7 @@ export async function revokePro(userId: string): Promise<ActionResult> {
     idSchema.parse(userId);
     const sub = await prisma.subscription.findUnique({ where: { userId }, select: { status: true, user: { select: { email: true } } } });
     if (!sub) throw new UserFacingError("Obuna topilmadi");
+    if (sub.status !== "PRO_ACTIVE") throw new UserFacingError("Bu foydalanuvchida faol PRO obuna yo‘q");
     await prisma.subscription.update({ where: { userId }, data: { status: "PRO_CANCELLED", cancelledAt: new Date() } });
     await audit({ actorId: admin.id, action: "subscription.revoke", targetType: "User", targetId: userId, summary: `${sub.user.email}: PRO bekor qilindi` });
     revalidatePath(`/super-admin/users/${userId}`);
@@ -161,6 +162,27 @@ export async function revokeUserSessions(userId: string): Promise<ActionResult> 
     await audit({ actorId: admin.id, action: "user.sessions.revoke", targetType: "User", targetId: userId, summary: `${res.count} ta sessiya yopildi` });
     revalidatePath(`/super-admin/users/${userId}`);
     return { ok: true, message: `${res.count} ta sessiya yopildi` };
+  } catch (err) {
+    return actionError(err);
+  }
+}
+
+/**
+ * Marks an account's email as verified by hand — for learners who registered before email
+ * verification was switched on, or who cannot receive the link (the admin has checked the address).
+ */
+export async function markEmailVerified(userId: string): Promise<ActionResult> {
+  try {
+    const admin = await assertAdmin();
+    idSchema.parse(userId);
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } });
+    if (!user) throw new UserFacingError("Foydalanuvchi topilmadi");
+    if (user.emailVerified) return { ok: true, message: "Email allaqachon tasdiqlangan" };
+    await prisma.user.update({ where: { id: userId }, data: { emailVerified: true } });
+    await audit({ actorId: admin.id, action: "user.email.verify", targetType: "User", targetId: userId, summary: `${user.email}: email qo‘lda tasdiqlandi` });
+    revalidatePath(`/super-admin/users/${userId}`);
+    revalidatePath("/super-admin/users");
+    return { ok: true, message: "Email tasdiqlandi — foydalanuvchi endi kira oladi" };
   } catch (err) {
     return actionError(err);
   }
