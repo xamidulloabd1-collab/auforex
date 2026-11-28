@@ -1,0 +1,37 @@
+{
+  "$comment": "Video kurs metama’lumotlari (npm run content:import -- plan <papka> --meta content/forex-kurs.json). Videolar repoda emas — Cloudflare R2’da. Har yangi dars uchun lessons ga raqami bilan yozuv qo‘shiladi.",
+  "course": {
+    "title": "Forex trading: noldan natijagacha",
+    "description": "AU Forex Academy’ning asosiy video kursi: birja va Forex asoslaridan texnik tahlil va amaliy savdogacha. Darslar ketma-ket ochiladi.",
+    "category": "Trading asoslari"
+  },
+  "lessons": {
+    "1": {
+      "title": "Tradingga kirish: birja, Forex va asosiy tushunchalar",
+      "coverTitle": "Tradingga kirish: birja va Forex",
+      "category": "Trading asoslari",
+      "level": "BEGINNER",
+      "access": "FREE",
+      "topics": ["Birja turlari", "Forex bozori", "Savdo sessiyalari", "Spred va kredit yelkasi", "Pips va lot"],
+      "description": "Kursning kirish darsi. Birja va uning turlari — fond, valyuta, xomashyo va kriptovalyuta birjalari, trading va trader tushunchalari hamda dunyodagi eng yirik moliyaviy bozor — Forex bilan tanishasiz. Savdo sessiyalari (Osiyo, Yevropa, Amerika, Avstraliya), asosiy (major) va kross valyuta juftliklari, oltin (XAU/USD) va kumush (XAG/USD), broker, spred va kredit yelkasi, pips va lot hisob-kitobi misollar bilan tushuntiriladi. Dars oxirida tahlil turlari: texnik, fundamental va shamlar tahlili."
+    },
+    "2": {
+      "title": "Texnik tahlil asoslari: yapon shamlari, darajalar va trend",
+      "coverTitle": "Texnik tahlil: shamlar, darajalar, trend",
+      "category": "Texnik tahlil",
+      "level": "BEGINNER",
+      "access": "PRO",
+      "topics": ["Yapon shamlari", "Doji, Hammer, Engulfing", "Support va resistance", "Trend chiziqlari", "TradingView amaliyoti"],
+      "description": "Texnik tahlilning asosiy vositalari. Yapon shamining tuzilishi (ochilish, yopilish, maksimum, minimum) va asosiy sham modellari — Doji, Marubozu, Engulfing, Harami, Hammer va Morning Star; ular asosida savdoga kirish va stop-loss qo‘yish. Qo‘llab-quvvatlash va qarshilik darajalari (support/resistance) hamda trend chiziqlarini chizish TradingView’da EUR/JPY, EUR/USD va XAU/USD grafiklarida amalda ko‘rsatiladi."
+    },
+    "3": {
+      "title": "Grafik modellari va amaliy tahlil: Double Top, Double Bottom, FVG",
+      "coverTitle": "Grafik modellari va amaliy tahlil",
+      "category": "Texnik tahlil",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "topics": ["Taymfreymlar", "Double Top (M) va Double Bottom (W)", "BUY / SELL nuqtalari", "Uchburchak modeli", "FVG zonalari"],
+      "description": "TradingView’da amaliy mashg‘ulot. Taymfreymni tanlash va grafikni o‘qish, «Double Top» (M) va «Double Bottom» (W) modellari, sotib olish (BUY) va sotish (SELL) nuqtalarini aniqlash, uchburchak (siqilish) modeli, FVG (Fair Value Gap) zonalari va trend chiziqlari bilan ishlash. Misollar EUR/USD, XAU/USD (oltin), EUR/CAD va NZD/CAD grafiklarida ko‘rib chiqiladi."
+    }
+  }
+}

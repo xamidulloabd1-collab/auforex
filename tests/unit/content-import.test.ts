@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain ESM script without type declarations
-import { cleanTitle, decideAction, markDuplicates, numberIn, orderEntries } from "../../scripts/content-import.mjs";
+import { applyMeta, candlesSvg, cleanTitle, coverHtml, decideAction, markDuplicates, numberIn, orderEntries } from "../../scripts/content-import.mjs";
 
 describe("content import: names and order", () => {
   it("reads lesson numbers written in different ways", () => {
@@ -59,5 +59,49 @@ describe("content import: what each file needs", () => {
     ]);
     expect(lessons.map((l: { action: string }) => l.action)).toEqual(["upload", "skip", "upload"]);
     expect(lessons[1].reason).toContain("Forex nima");
+  });
+});
+
+describe("content import: one course with approved titles (meta.json)", () => {
+  const lesson = (number: number) => ({ number, title: `${number}-dars`, category: "Kurs", access: "PRO", level: null, action: "remux", sha256: String(number) });
+  const meta = {
+    course: { title: "Forex trading: noldan natijagacha", description: "Asosiy kurs", category: "Trading asoslari" },
+    lessons: {
+      "1": { title: "Tradingga kirish", category: "Trading asoslari", access: "FREE", level: "BEGINNER", description: "Kirish", topics: ["Forex"] },
+      "2": { title: "Texnik tahlil asoslari", category: "Texnik tahlil" },
+      "3": { title: "Grafik modellari", category: "Texnik tahlil", level: "INTERMEDIATE" },
+    },
+  };
+
+  it("keeps the series in one course and gives each lesson its own category, title and texts", () => {
+    const cats = applyMeta([{ name: "Kurs", order: 0, courses: [{ title: "Kurs", lessons: [lesson(1), lesson(2), lesson(3)] }] }], meta);
+    expect(cats.map((c: { name: string }) => c.name)).toEqual(["Trading asoslari", "Texnik tahlil"]);
+    expect(new Set(cats.flatMap((c: { courses: { title: string }[] }) => c.courses.map((k) => k.title)))).toEqual(new Set([meta.course.title]));
+    const all = cats.flatMap((c: { courses: { lessons: Record<string, unknown>[] }[] }) => c.courses.flatMap((k) => k.lessons));
+    expect(all.map((l: Record<string, unknown>) => [l.number, l.title, l.category, l.access, l.level])).toEqual([
+      [1, "Tradingga kirish", "Trading asoslari", "FREE", "BEGINNER"],
+      [2, "Texnik tahlil asoslari", "Texnik tahlil", "PRO", null],
+      [3, "Grafik modellari", "Texnik tahlil", "PRO", "INTERMEDIATE"],
+    ]);
+    expect(cats[0].courses[0]).toMatchObject({ description: "Asosiy kurs", category: "Trading asoslari", publish: false });
+  });
+
+  it("a lesson without an entry keeps its file title and gets the course category", () => {
+    const cats = applyMeta([{ name: "Kurs", order: 0, courses: [{ title: "Kurs", lessons: [lesson(4)] }] }], meta);
+    expect(cats[0].courses[0].lessons[0]).toMatchObject({ title: "4-dars", category: "Trading asoslari" });
+  });
+});
+
+describe("content import: covers", () => {
+  it("draws the same chart for the same lesson and a different one for the next", () => {
+    expect(candlesSvg(1)).toBe(candlesSvg(1));
+    expect(candlesSvg(1)).not.toBe(candlesSvg(2));
+  });
+
+  it("escapes titles and keeps Uzbek letters", () => {
+    const html = coverHtml({ number: 2, title: "Shamlar <va> “trend”", category: "Texnik tahlil", topics: ["Qo‘llab-quvvatlash"] }, "/fonts");
+    expect(html).toContain("Shamlar &lt;va&gt; “trend”");
+    expect(html).toContain("Qo‘llab-quvvatlash");
+    expect(html).toContain("2-DARS");
   });
 });

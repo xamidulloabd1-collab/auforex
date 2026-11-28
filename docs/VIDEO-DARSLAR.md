@@ -94,6 +94,23 @@ Raqam bo‘lmasa yoki takrorlansa, alifbo tartibida 1, 2, 3… beriladi.
 4. **Tekshirish:** `… -- verify --site …` — har dars saytda bitta, videosi ombordan ochiladi (206).
 5. **Nashr:** tekshirib, tasdiqlagandan keyin `… -- publish --site …`.
 
+**Bitta kurs (seriya) uchun — tasdiqlangan nomlar, kategoriya, tavsif va muqova bilan:**
+[`content/forex-kurs.json`](../content/forex-kurs.json) da kurs nomi/tavsifi/kategoriyasi va har dars (raqami bo‘yicha)
+uchun nom, kategoriya, daraja (`BEGINNER`/`INTERMEDIATE`/`ADVANCED`), kirish (`FREE`/`PRO`), mavzular va tavsif yoziladi.
+
+```bash
+npm run content:import -- plan <papka yoki zip> --meta content/forex-kurs.json   # PLAN.md: bitta jadval, dars tartibida
+npm run content:import -- covers            # covers/NN.jpg — sayt uslubidagi 16:9 muqova (logotip, raqam, nom, mavzular)
+npm run content:import -- prepare           # MP4 indeksini boshiga ko‘chirish (sifat o‘zgarmaydi)
+npm run content:import -- import --site …   # tavsif, daraja va muqova bilan
+npm run content:import -- verify --site …
+npm run content:import -- update-covers --site …   # muqova o‘zgartirilsa, saytdagi darslarda almashtiradi
+```
+
+Muqova saytdagi bo‘sh joylarga moslangan: katalogdagi “Bepul” belgisi (yuqori chap), pleyerdagi tomoshabin belgisi
+(yuqori o‘ng), pleyer boshqaruvi (pastki qism) va o‘ynatish tugmasi (pastki o‘ng) ustiga matn tushmaydi.
+1-bosqich rejasi: [`content/PLAN-1-bosqich.md`](../content/PLAN-1-bosqich.md).
+
 Sinov (Preview, 27.11.2026): arxiv → 2 kategoriya, 5 dars (takror fayl o‘tkazib yuborildi, MOV va indeks oxirida →
 remux, HEVC → H.264). Ikkinchi ishga tushirishda 0 ta yangi dars. Tezlik: 116 MB video 26,7 MB/s.
 

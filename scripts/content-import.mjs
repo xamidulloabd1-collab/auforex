@@ -4,6 +4,8 @@
  * own storage keys and checks are used (no database or bucket keys on this computer).
  *
  *   node scripts/content-import.mjs plan    <archive.zip | folder> [--out content-import] [--free 1]
+ *   node scripts/content-import.mjs plan    <archive.zip | folder> --meta meta.json   (one course, titles from meta)
+ *   node scripts/content-import.mjs covers  [--out content-import]
  *   node scripts/content-import.mjs prepare [--out content-import] [--allow-transcode]
  *   node scripts/content-import.mjs import  --site https://… [--out content-import] [--publish-courses]
  *   node scripts/content-import.mjs verify  --site https://… [--out content-import]
@@ -12,6 +14,11 @@
  * plan     unpacks the archive, reads every video (ffprobe), finds duplicates by content and writes
  *          plan.json + PLAN.md for approval: categories, courses, lesson numbers and titles, access,
  *          and what each file needs (upload as is / lossless remux / re-encode / skip).
+ * --meta   a JSON file the owner approves: { course: {title, description, category},
+ *          lessons: { "1": {title, category, description, level, access, topics[]} … } }. With it every
+ *          video goes into that ONE course (numbers = order of the series) and each lesson gets its own
+ *          category, title and description.
+ * covers   draws a 16:9 cover for each lesson in the site's own style (logo, number, title, topics).
  * prepare  makes browser-ready copies: MP4 with the index at the start (lossless). Re-encoding to
  *          H.264/AAC only with --allow-transcode (it changes the video, so it is never automatic).
  * import   signs in as a super admin (IMPORT_ADMIN_EMAIL / IMPORT_ADMIN_PASSWORD) and creates the
@@ -19,6 +26,7 @@
  *          already exist (same title or number in the course) are skipped; progress is kept in ledger.json.
  * verify   checks every planned lesson on the site: it exists once, and its video answers from storage.
  * publish  publishes the plan's courses (only after the content has been checked and approved).
+ * update-covers  replaces the covers of lessons already on the site (after `covers` was run again).
  *
  * Folder layout in the archive (one top folder is unwrapped):
  *   <Kategoriya>/<01 Dars nomi>.mp4                 → course = category
@@ -224,6 +232,7 @@ function probe(file) {
   };
 }
 
+const LEVELS = { BEGINNER: "Boshlang‘ich", INTERMEDIATE: "O‘rta", ADVANCED: "Yuqori" };
 const mb = (n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 const mmss = (s) => (s == null ? "—" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
 
@@ -235,7 +244,34 @@ async function open(page, url) {
 
 /* ------------------------------------------------------------------ plan */
 
-async function plan(source, out, freeCount) {
+/** Puts every lesson into the single course of `meta` and applies the approved titles and texts. */
+export function applyMeta(categories, meta) {
+  const course = meta.course;
+  const lessons = categories.flatMap((c) => c.courses.flatMap((k) => k.lessons));
+  const byCategory = new Map();
+  for (const l of lessons) {
+    const m = meta.lessons?.[String(l.number)] ?? {};
+    Object.assign(l, {
+      course: course.title,
+      category: m.category ?? course.category,
+      ...(m.title ? { title: m.title } : {}),
+      ...(m.coverTitle ? { coverTitle: m.coverTitle } : {}),
+      description: m.description ?? l.description ?? null,
+      level: m.level ?? l.level ?? null,
+      access: m.access ?? l.access,
+      topics: m.topics ?? [],
+    });
+    if (!byCategory.has(l.category)) byCategory.set(l.category, []);
+    byCategory.get(l.category).push(l);
+  }
+  return [...byCategory.entries()].map(([name, list], i) => ({
+    name,
+    order: i + 1,
+    courses: [{ title: course.title, description: course.description ?? null, category: course.category ?? null, publish: false, lessons: list }],
+  }));
+}
+
+async function plan(source, out, freeCount, metaFile) {
   const srcDir = path.join(out, "source");
   let root;
   if (statSync(source).isDirectory()) root = contentRoot(path.resolve(source));
@@ -306,6 +342,11 @@ async function plan(source, out, freeCount) {
     delete cat.dir;
   }
   markDuplicates(all);
+  if (metaFile) {
+    const meta = JSON.parse(readFileSync(metaFile, "utf8"));
+    if (!meta.course?.title) throw new Error("meta.json: course.title kerak");
+    categories.splice(0, categories.length, ...applyMeta(categories, meta));
+  }
   // Two files with the same title in one course would look like a repeated lesson: number them apart.
   for (const cat of categories) for (const course of cat.courses) {
     const titles = new Map();
@@ -331,15 +372,37 @@ function planMarkdown(p) {
     `Kurslar avval **nashr qilinmagan** holda yaratiladi; tekshirilgach nashr qilinadi.`,
     ``,
   ];
+  const courseTitles = new Set(p.categories.flatMap((c) => c.courses.map((k) => k.title)));
+  if (courseTitles.size === 1 && p.categories.length > 1) {
+    // One course (series) whose lessons have their own categories: one table in lesson order.
+    const k = p.categories[0].courses[0];
+    const lessons = p.categories.flatMap((c) => c.courses.flatMap((x) => x.lessons.map((l) => ({ ...l, category: c.name })))).sort((a, b) => a.number - b.number);
+    lines.push(`## Kurs: ${k.title}`, "", ...(k.description ? [k.description, ""] : []), `Kurs kategoriyasi: ${k.category ?? p.categories[0].name}`, "");
+    lines.push("| № | Dars nomi | Kategoriya | Daraja | Davomiyligi | Hajmi | Kirish | Holat | Fayl |", "|---|---|---|---|---|---|---|---|---|");
+    for (const l of lessons) {
+      lines.push(`| ${l.number} | ${l.title} | ${l.category} | ${LEVELS[l.level] ?? "—"} | ${mmss(l.durationSeconds)} | ${mb(l.size)} | ${l.access === "FREE" ? "Bepul" : "PRO"} | **${l.action}** ${l.reason} | \`${path.basename(l.file)}\` |`);
+    }
+    lines.push("");
+    for (const l of lessons) {
+      lines.push(`### ${l.number}-dars. ${l.title}`, "", ...(l.description ? [l.description, ""] : []), ...(l.topics?.length ? [`Mavzular: ${l.topics.join(" · ")}`, ""] : []), ...(l.cover ? [`Muqova: \`${l.cover}\``, ""] : []));
+    }
+    return lines.join("\n");
+  }
   for (const c of p.categories) {
     lines.push(`## ${c.order}. ${c.name}`, "");
     for (const k of c.courses) {
-      if (k.title !== c.name) lines.push(`### Kurs: ${k.title}`, "");
+      if (k.title !== c.name) lines.push(`### Kurs: ${k.title}${k.description ? ` — ${k.description}` : ""}`, "");
       lines.push("| № | Dars nomi | Davomiyligi | Hajmi | Kirish | Holat | Fayl |", "|---|---|---|---|---|---|---|");
       for (const l of k.lessons) {
         lines.push(`| ${l.number} | ${l.title} | ${mmss(l.durationSeconds)} | ${mb(l.size)} | ${l.access === "FREE" ? "Bepul" : "PRO"} | **${l.action}** ${l.reason} | \`${path.basename(l.file)}\` |`);
       }
       lines.push("");
+      for (const l of k.lessons.filter((x) => x.description || x.cover)) {
+        lines.push(`**${l.number}-dars. ${l.title}** · ${c.name}${l.level ? ` · ${LEVELS[l.level] ?? l.level}` : ""}`, "");
+        if (l.description) lines.push(l.description, "");
+        if (l.topics?.length) lines.push(`Mavzular: ${l.topics.join(" · ")}`, "");
+        if (l.cover) lines.push(`Muqova: \`${l.cover}\``, "");
+      }
     }
   }
   return lines.join("\n");
@@ -350,6 +413,131 @@ function printSummary(p) {
   const by = (a) => all.filter((l) => l.action === a).length;
   console.log(`Kategoriyalar: ${p.categories.length} · kurslar: ${p.categories.reduce((s, c) => s + c.courses.length, 0)} · darslar: ${all.length}`);
   console.log(`upload ${by("upload")} · remux ${by("remux")} · transcode ${by("transcode")} · skip ${by("skip")} · jami ${mb(all.reduce((s, l) => s + l.size, 0))}`);
+}
+
+/* ------------------------------------------------------------------ covers */
+
+const escapeHtml = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+
+/** Small deterministic random generator, so a lesson's chart looks the same on every run. */
+function seeded(n) {
+  let x = (n * 2654435761) >>> 0 || 1;
+  return () => ((x = (x ^ (x << 13)) >>> 0), (x = (x ^ (x >>> 17)) >>> 0), (x = (x ^ (x << 5)) >>> 0), x / 4294967296);
+}
+
+/** Candlestick chart in the site's colours (SVG). The lesson number picks the shape — uptrend,
+ *  reversal, or range then breakout — and the exact candles, so neighbouring covers differ. */
+export function candlesSvg(number, width = 640, height = 430) {
+  const rnd = seeded(number * 97 + 13);
+  const count = 24;
+  const step = width / count;
+  const shape = number % 3; // 1: uptrend · 2: down, then up · 0: range, then breakout
+  const target = (i) => {
+    const t = i / (count - 1);
+    if (shape === 1) return 0.82 - t * 0.68;
+    if (shape === 2) return t < 0.45 ? 0.35 + t * 1.0 : 0.8 - (t - 0.45) * 1.25;
+    return t < 0.62 ? 0.62 + Math.sin(t * 18) * 0.07 : 0.62 - (t - 0.62) * 1.35;
+  };
+  let price = target(0) * height;
+  const parts = [];
+  const trend = [];
+  for (let i = 0; i < count; i++) {
+    const open = price;
+    const goal = target(i) * height;
+    const close = Math.min(height * 0.94, Math.max(height * 0.06, open + (goal - open) * 0.75 + (rnd() - 0.5) * height * 0.09));
+    const high = Math.min(open, close) - (0.01 + rnd() * 0.05) * height;
+    const low = Math.max(open, close) + (0.01 + rnd() * 0.05) * height;
+    const up = close < open;
+    const x = i * step + step * 0.5;
+    const color = up ? "#C9A45C" : "#64748B";
+    const opacity = (0.4 + (i / count) * 0.6).toFixed(2);
+    parts.push(
+      `<line x1="${x.toFixed(1)}" y1="${high.toFixed(1)}" x2="${x.toFixed(1)}" y2="${low.toFixed(1)}" stroke="${color}" stroke-width="2.2" opacity="${opacity}"/>` +
+        `<rect x="${(x - step * 0.3).toFixed(1)}" y="${Math.min(open, close).toFixed(1)}" width="${(step * 0.6).toFixed(1)}" height="${Math.max(4, Math.abs(close - open)).toFixed(1)}" rx="2.5" fill="${color}" opacity="${opacity}"/>`,
+    );
+    trend.push(`${x.toFixed(1)},${((open + close) / 2).toFixed(1)}`);
+    price = close;
+  }
+  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="tl" x1="0" x2="1"><stop offset="0" stop-color="#E4CB93" stop-opacity="0"/><stop offset="1" stop-color="#E4CB93" stop-opacity="0.85"/></linearGradient></defs>
+    ${parts.join("")}
+    <polyline points="${trend.join(" ")}" fill="none" stroke="url(#tl)" stroke-width="2.5" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+const LOGO_SVG = `<svg viewBox="0 0 40 40" width="52" height="52"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#E4CB93"/><stop offset="55%" stop-color="#C9A45C"/><stop offset="100%" stop-color="#8F6F33"/></linearGradient></defs><rect x="0.75" y="0.75" width="38.5" height="38.5" rx="11" fill="#101723" stroke="url(#g)" stroke-opacity="0.55" stroke-width="1.5"/><line x1="11" y1="21" x2="11" y2="31" stroke="#C9A45C" stroke-opacity="0.55" stroke-width="1.2"/><rect x="8.5" y="23" width="5" height="6" rx="1.2" fill="url(#g)" opacity="0.7"/><line x1="20" y1="13" x2="20" y2="29" stroke="#C9A45C" stroke-opacity="0.7" stroke-width="1.2"/><rect x="17.5" y="16" width="5" height="10" rx="1.2" fill="url(#g)" opacity="0.85"/><line x1="29" y1="7" x2="29" y2="24" stroke="#C9A45C" stroke-width="1.2"/><rect x="26.5" y="9" width="5" height="12" rx="1.2" fill="url(#g)"/></svg>`;
+
+/** The cover page (1280×720). Kept clear: the top-left corner (the catalog's "Bepul" badge), the
+ *  top-right corner (the player's viewer watermark), the bottom fifth (the player's controls) and the
+ *  bottom-right corner (the catalog's play button). Duration and level are shown by the site itself. */
+export function coverHtml(l, fontsDir) {
+  const font = (pkg) => `<link rel="stylesheet" href="${new URL(`${pkg}/index.css`, `file://${fontsDir}/`).href}">`;
+  return `<!doctype html><html lang="uz"><head><meta charset="utf-8">
+${font("manrope")}${font("inter")}${font("space-grotesk")}
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1280px; height: 720px; overflow: hidden; background: #080B12; font-family: "Inter Variable", sans-serif; color: #F8FAFC; }
+  .cover { position: relative; width: 1280px; height: 720px; overflow: hidden;
+    background: radial-gradient(70% 90% at 88% 8%, rgba(201,164,92,0.20), transparent 60%), linear-gradient(160deg, #0C111B 0%, #101723 55%, #121A27 100%); }
+  .grid { position: absolute; inset: 0; opacity: .55;
+    background-image: linear-gradient(to right, rgba(148,163,184,.10) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,.10) 1px, transparent 1px);
+    background-size: 64px 64px; -webkit-mask-image: radial-gradient(ellipse 75% 70% at 70% 45%, #000 35%, transparent 80%); }
+  .chart { position: absolute; right: 40px; top: 110px; opacity: .95;
+    -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 30%), linear-gradient(to top, transparent 0%, #000 30%); -webkit-mask-composite: source-in; }
+  .brand { position: absolute; top: 124px; left: 96px; display: flex; align-items: center; gap: 14px; }
+  .brand b { display: block; font-family: "Manrope Variable"; font-weight: 800; font-size: 22px; letter-spacing: .06em; }
+  .brand i { display: block; font-style: normal; font-family: "Space Grotesk Variable"; font-size: 13px; letter-spacing: .32em; color: #E4CB93; margin-top: 4px; }
+  .content { position: absolute; left: 96px; top: 206px; width: 700px; }
+  .chip { display: inline-block; padding: 9px 18px; border-radius: 999px; border: 1.5px solid rgba(201,164,92,.45); background: rgba(201,164,92,.08);
+    font-family: "Space Grotesk Variable"; font-size: 18px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: #E4CB93; }
+  .num { margin-top: 24px; font-family: "Manrope Variable"; font-weight: 800; font-size: 40px; letter-spacing: .06em;
+    background: linear-gradient(100deg, #E4CB93 0%, #C9A45C 45%, #8F6F33 100%); -webkit-background-clip: text; color: transparent; }
+  h1 { margin-top: 8px; font-family: "Manrope Variable"; font-weight: 800; font-size: 60px; line-height: 1.08; letter-spacing: -.01em;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-wrap: balance; }
+  .topics { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; max-width: 660px; }
+  .topics span { padding: 7px 14px; border-radius: 10px; background: rgba(21,29,43,.85); border: 1px solid rgba(148,163,184,.18); font-size: 19px; color: #CBD5E1; }
+  .bar { position: absolute; left: 0; bottom: 0; height: 6px; width: 100%; background: linear-gradient(90deg, #8F6F33, #C9A45C 40%, #E4CB93 70%, transparent); opacity: .85; }
+</style></head><body><div class="cover">
+  <div class="grid"></div>
+  <div class="chart">${candlesSvg(l.number)}</div>
+  <div class="brand">${LOGO_SVG}<span><b>AU FOREX</b><i>ACADEMY</i></span></div>
+  <div class="content">
+    <span class="chip">${escapeHtml(l.category)}</span>
+    <div class="num">${l.number}-DARS</div>
+    <h1>${escapeHtml(l.coverTitle ?? l.title)}</h1>
+    ${l.topics?.length ? `<div class="topics">${l.topics.slice(0, 5).map((t) => `<span>${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+  </div>
+  <div class="bar"></div>
+</div></body></html>`;
+}
+
+/** Renders covers/<NN>.jpg for every lesson of the plan and records them in plan.json. */
+async function drawCovers(out) {
+  const file = path.join(out, "plan.json");
+  const p = JSON.parse(readFileSync(file, "utf8"));
+  const fontsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "node_modules", "@fontsource-variable");
+  const dir = path.join(out, "covers");
+  mkdirSync(dir, { recursive: true });
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROME_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } : {});
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    for (const l of p.categories.flatMap((c) => c.courses.flatMap((k) => k.lessons))) {
+      if (l.action === "skip") continue;
+      const html = path.join(dir, `${String(l.number).padStart(2, "0")}.html`);
+      writeFileSync(html, coverHtml(l, fontsDir));
+      await page.goto(`file://${html}`);
+      await page.evaluate(() => document.fonts.ready);
+      const target = path.join(dir, `${String(l.number).padStart(2, "0")}.jpg`);
+      await page.screenshot({ path: target, type: "jpeg", quality: 90 });
+      l.cover = path.relative(out, target);
+      console.log(`✓ muqova: ${l.cover}`);
+    }
+  } finally {
+    await browser.close();
+  }
+  writeFileSync(file, JSON.stringify(p, null, 2));
+  writeFileSync(path.join(out, "PLAN.md"), planMarkdown(p));
 }
 
 /* ------------------------------------------------------------------ prepare */
@@ -474,7 +662,10 @@ async function publishCourses(out, site) {
   const p = JSON.parse(readFileSync(path.join(out, "plan.json"), "utf8"));
   const { browser, page } = await adminSession(site);
   try {
+    const seen = new Set();
     for (const course of p.categories.flatMap((c) => c.courses)) {
+      if (seen.has(course.title)) continue;
+      seen.add(course.title);
       await open(page, "/super-admin/courses");
       const toggle = page.getByRole("switch", { name: `${course.title} nashr holati`, exact: true });
       if ((await toggle.count()) !== 1) {
@@ -493,6 +684,43 @@ async function publishCourses(out, site) {
   } finally {
     await browser.close();
   }
+}
+
+/** Replaces the cover of lessons that are already on the site with the plan's current cover. */
+async function updateCovers(out, site) {
+  const p = JSON.parse(readFileSync(path.join(out, "plan.json"), "utf8"));
+  const { browser, page } = await adminSession(site);
+  let done = 0;
+  try {
+    for (const l of planLessons(p).filter((x) => x.action !== "skip" && x.cover)) {
+      const label = `${l.number}. ${l.title}`;
+      await open(page, `/super-admin/lessons?q=${encodeURIComponent(l.title)}`);
+      const rows = page.getByTestId("admin-lesson-row").filter({ has: page.getByText(l.title, { exact: true }) }).filter({ hasText: l.courseTitle });
+      if ((await rows.count()) !== 1) {
+        console.log(`✗ ${label}: saytda ${await rows.count()} ta — o‘tkazib yuborildi`);
+        process.exitCode = 1;
+        continue;
+      }
+      await rows.first().getByRole("link", { name: "Tahrirlash" }).click();
+      await page.waitForURL(/\/super-admin\/lessons\/[^/]+$/);
+      await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+      const uploaded = page.waitForResponse((r) => r.url().endsWith("/api/admin/uploads") && (r.request().postData() ?? "").includes('"action":"complete"'), { timeout: 60_000 }).catch(() => null);
+      await page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]').setInputFiles(path.join(out, l.cover));
+      const res = await uploaded;
+      if (!res || !res.ok()) {
+        console.log(`✗ ${label}: muqova yuklanmadi`);
+        process.exitCode = 1;
+        continue;
+      }
+      await page.getByTestId("lesson-save").click();
+      await page.waitForURL((u) => u.pathname === "/super-admin/lessons", { timeout: 60_000 });
+      done++;
+      console.log(`✓ ${label}: muqova yangilandi`);
+    }
+  } finally {
+    await browser.close();
+  }
+  console.log(`Yakun: ${done} ta muqova yangilandi`);
 }
 
 async function importToSite(out, site, publishNow) {
@@ -541,7 +769,8 @@ async function importToSite(out, site, publishNow) {
         await page.getByTestId("new-course").click();
         const dialog = page.getByRole("dialog");
         await page.getByTestId("course-title").fill(course.title);
-        await dialog.getByLabel("Kategoriya").selectOption({ label: cat.name });
+        if (course.description) await dialog.getByLabel("Tavsif").fill(course.description);
+        await dialog.getByLabel("Kategoriya").selectOption({ label: course.category ?? cat.name });
         if (publishNow || course.publish) await dialog.getByRole("switch").click();
         await dialog.getByRole("button", { name: "Saqlash" }).click();
         await page.locator("tbody tr td:first-child > span:first-child", { hasText: course.title }).first().waitFor();
@@ -585,6 +814,12 @@ async function importToSite(out, site, publishNow) {
         await page.getByTestId("lesson-number").fill(String(l.number));
         if (l.level) await page.getByTestId("lesson-level").selectOption(l.level);
         await page.getByTestId("lesson-access").selectOption(l.access === "FREE" ? "FREE" : "PRO");
+        if (l.description) await page.getByLabel("Dars tavsifi").fill(l.description);
+        if (l.cover) {
+          // The cover field has no test id; it is the form's only image input.
+          await page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]').setInputFiles(path.join(out, l.cover));
+          await page.getByText("Rasm yuklangan").waitFor({ timeout: 60_000 });
+        }
         const size = l.uploadSize ?? l.size;
         const started = Date.now();
         const uploading = page.getByTestId("video-upload-progress").or(page.getByText("Video yuklangan"));
@@ -633,6 +868,7 @@ if (isMain) {
     options: {
       out: { type: "string", default: "content-import" },
       free: { type: "string", default: "0" },
+      meta: { type: "string" },
       site: { type: "string" },
       "allow-transcode": { type: "boolean", default: false },
       "publish-courses": { type: "boolean", default: false },
@@ -644,16 +880,18 @@ if (isMain) {
   try {
     if (command === "plan") {
       if (!source) throw new Error("Arxiv yoki papka yo‘lini bering");
-      await plan(source, out, Number(values.free) || 0);
-    } else if (command === "prepare") prepare(out, values["allow-transcode"]);
-    else if (["import", "verify", "publish"].includes(command)) {
+      await plan(source, out, Number(values.free) || 0, values.meta ? path.resolve(values.meta) : null);
+    } else if (command === "covers") await drawCovers(out);
+    else if (command === "prepare") prepare(out, values["allow-transcode"]);
+    else if (["import", "verify", "publish", "update-covers"].includes(command)) {
       if (!values.site) throw new Error("--site https://… kerak");
       const site = values.site.replace(/\/$/, "");
       if (command === "import") await importToSite(out, site, values["publish-courses"]);
       else if (command === "verify") await verifySite(out, site);
+      else if (command === "update-covers") await updateCovers(out, site);
       else await publishCourses(out, site);
     } else {
-      console.log("Buyruqlar: plan <zip|papka> · prepare · import · verify · publish --site <url> (batafsil: fayl boshidagi izoh)");
+      console.log("Buyruqlar: plan <zip|papka> [--meta] · covers · prepare · import · verify · publish --site <url> (batafsil: fayl boshidagi izoh)");
       process.exitCode = 1;
     }
   } catch (err) {
