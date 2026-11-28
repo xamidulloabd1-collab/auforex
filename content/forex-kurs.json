@@ -32,6 +32,138 @@
       "access": "PRO",
       "topics": ["Taymfreymlar", "Double Top (M) va Double Bottom (W)", "BUY / SELL nuqtalari", "Uchburchak modeli", "FVG zonalari"],
       "description": "TradingView’da amaliy mashg‘ulot. Taymfreymni tanlash va grafikni o‘qish, «Double Top» (M) va «Double Bottom» (W) modellari, sotib olish (BUY) va sotish (SELL) nuqtalarini aniqlash, uchburchak (siqilish) modeli, FVG (Fair Value Gap) zonalari va trend chiziqlari bilan ishlash. Misollar EUR/USD, XAU/USD (oltin), EUR/CAD va NZD/CAD grafiklarida ko‘rib chiqiladi."
+    },
+    "4": {
+      "title": "Stop loss, take profit va indikatorlar: RSI bilan ishlash",
+      "coverTitle": "Stop loss, take profit va RSI",
+      "category": "Texnik tahlil",
+      "level": "BEGINNER",
+      "access": "PRO",
+      "motif": "indicator",
+      "topics": ["Stop loss va take profit", "Indikatorlar va turlari", "RSI: 70 va 30", "TradingView’da RSI", "CAD/JPY va XAU/USD"],
+      "summary": "Zararni cheklash (stop loss) va foydani qayd etish (take profit) buyurtmalari, indikatorlar va RSI (nisbiy kuch indeksi) bilan tanishuv.",
+      "description": "Dars stop loss va take profit buyurtmalaridan boshlanadi: ular nima uchun kerak va grafikda qayerga qo‘yiladi. So‘ng indikatorlar mavzusi: indikator nima, qanday turlari bor, savdoni avtomatlashtirish (robotlar) haqida qisqacha ma’lumot va nima uchun faqat indikatorga to‘liq tayanib bo‘lmasligi. Asosiy qism — RSI (Relative Strength Index): uni TradingView’da qo‘shish, 70 va 30 darajalarini o‘qish. Misollar CAD/JPY (kunlik) va XAU/USD (1 soatlik va 4 soatlik) grafiklarida ko‘rib chiqiladi."
+    },
+    "5": {
+      "title": "Trend strategiyasi: yo‘nalishni aniqlash va savdoga kirish qoidalari",
+      "coverTitle": "Trend strategiyasi: kirish qoidalari",
+      "category": "Strategiyalar",
+      "level": "BEGINNER",
+      "access": "PRO",
+      "motif": "channel",
+      "topics": ["Katta taymfreymda trend", "1 soatlik grafik", "3 sham qoidasi", "Kirish, stop loss, take profit", "EUR/AUD, XAU/USD, CAD/JPY"],
+      "summary": "Trend bo‘yicha savdo qilishning aniq qoidalari: yo‘nalishni katta taymfreymda aniqlash va 1 soatlik grafikda kirish nuqtasini topish.",
+      "description": "Ushbu darsda bitta to‘liq strategiya bosqichma-bosqich tushuntiriladi. Avval bozor yo‘nalishi (trend) katta taymfreymda aniqlanadi, savdo esa 1 soatlik grafikda olib boriladi. Trendga qarshi kamida uchta bir xil rangli sham ketma-ket hosil bo‘lgach, ular hosil qilgan daraja buzilishi kirish signali sifatida ko‘riladi; stop loss va take profit qayerga qo‘yilishi ham ko‘rsatiladi. Qoidalar EUR/AUD (4 soatlik), XAU/USD va CAD/JPY (1 soatlik) grafiklarida amalda tekshiriladi."
+    },
+    "6": {
+      "title": "Breakout strategiyasi, Fibonacci va «Power of Three» modeli",
+      "coverTitle": "Breakout, Fibonacci va Power of Three",
+      "category": "Strategiyalar",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "motif": "range-breakout",
+      "topics": ["Breakout savdosi", "Fibonacci retracement", "Fibonacci extension", "Power of Three", "XAU/USD va USD/CAD"],
+      "summary": "Daraja yorib o‘tilganda savdo qilish, Fibonacci vositalari va bozor harakatining uch bosqichli «Power of Three» modeli.",
+      "description": "Dars breakout (darajani yorib o‘tish) strategiyasi bilan boshlanadi. Keyin Fibonacci vositalari — retracement (orqaga qaytish darajalari) va extension (harakat davomi uchun maqsadlar) XAU/USD 1 soatlik grafigida chizib ko‘rsatiladi. Ikkinchi qismda «Power of Three» modeli: bozor avval konsolidatsiyada (flat) turadi, so‘ng yolg‘on harakat — manipulyatsiya bo‘ladi va undan keyin asosiy yo‘nalishdagi harakat — distributsiya boshlanadi. Model USD/CAD 1 soatlik grafigida tahlil qilinadi. Dars oxirida uy vazifasi beriladi."
+    },
+    "7": {
+      "title": "Fundamental tahlil: iqtisodiy kalendar va yangiliklar bilan ishlash",
+      "coverTitle": "Fundamental tahlil va iqtisodiy kalendar",
+      "category": "Fundamental tahlil",
+      "level": "BEGINNER",
+      "access": "PRO",
+      "motif": "news",
+      "topics": ["Fundamental tahlil", "Iqtisodiy kalendar", "Yangilik muhimligi", "Actual, Forecast, Previous", "Dollar indeksi (DXY)"],
+      "summary": "Yangiliklar bozorga qanday ta’sir qilishi va iqtisodiy kalendarni o‘qish: muhim yangiliklarni topish, prognoz va haqiqiy natijani solishtirish.",
+      "description": "Fundamental tahlil — bozorda e’lon qilinadigan iqtisodiy va siyosiy yangiliklarga qarab narx harakatini baholash. Darsda Investing.com saytidagi iqtisodiy kalendar (Economic Calendar) bilan ishlash ko‘rsatiladi: vaqt mintaqasini O‘zbekiston vaqtiga (UTC+5) sozlash, yangilikning muhimlik darajasi (yulduzchalar), Actual (haqiqiy), Forecast (prognoz) va Previous (oldingi) ko‘rsatkichlari. Natija prognozdan yuqori yoki past chiqqanda valyuta juftligiga qanday ta’sir qilishi, yangilik vaqtida savdo qilishning xavflari va dollar indeksi (DXY) haqida ham so‘z boradi. Misollar AQSh iqtisodiy yangiliklari va XAU/USD grafigida."
+    },
+    "8": {
+      "title": "Elliott to‘lqinlari va Fibonacci: to‘lqinlar bo‘yicha savdo",
+      "coverTitle": "Elliott to‘lqinlari va Fibonacci",
+      "category": "Texnik tahlil",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "motif": "waves",
+      "topics": ["Elliott to‘lqinlari (0–5)", "2–3 to‘lqin savdosi", "Kirish zonasi: 0.618", "Maqsadlar: 1.618 va 2.618", "XAU/USD amaliyoti"],
+      "summary": "Elliott to‘lqinlari va Fibonacci yordamida trend ichida kirish zonasi, stop loss va maqsadlarni aniqlash.",
+      "description": "Darsda bozor harakatining Elliott to‘lqinlari bo‘yicha tuzilishi (0 dan 5 gacha nuqtalar) va trend ichida savdo qilish uchun qulay qismlar tushuntiriladi. Asosiy misol — «2–3 savdosi»: 0–1 to‘lqiniga Fibonacci tortiladi va 0.618 darajasi kirish zonasi bo‘ladi, stop loss 0.786 darajasi hududiga qo‘yiladi, maqsadlar esa 1–2 to‘lqiniga tortilgan Fibonacci’ning 1; 1.618 va 2.618 darajalarida belgilanadi. So‘ng 0 dan 5 gacha bo‘lgan to‘liq harakat bo‘yicha savdo ketma-ketligi XAU/USD 1 soatlik grafigida ko‘rib chiqiladi. Uy vazifasi — oltin grafigida shunday tahlilni mustaqil bajarish."
+    },
+    "9": {
+      "title": "Likvidlik: buy-side, sell-side va likvidlikning olinishi",
+      "coverTitle": "Likvidlik va uning olinishi",
+      "category": "Texnik tahlil",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "motif": "liquidity",
+      "topics": ["Likvidlik nima", "Teng cho‘qqilar va tublar", "Buy-side va sell-side", "Sham tanasi bilan buzilish", "XAU/USD va EUR/USD"],
+      "summary": "Bozordagi likvidlik — stop buyurtmalar to‘plangan joylar: ularni grafikda topish va likvidlik olinmaguncha savdoga shoshilmaslik.",
+      "description": "Likvidlik (liquidity) atamasining tradingdagi ma’nosi: bir necha marta tegilgan cho‘qqilar va tublar ortida treyderlarning stop buyurtmalari to‘planadi va narx ko‘pincha avval shu joylardagi likvidlikni olib o‘tadi. Darsda buy-side va sell-side likvidlik, kunlik shamning maksimum va minimumlari hamda trend chizig‘i likvidligi ko‘rsatiladi. Daraja faqat sham tanasi bilan yopilganda buzilgan hisoblanishi, likvidlik olinmaguncha savdoga kirmaslik qoidasi va savdo sessiyalarining ta’siri ham eslatib o‘tiladi. Darsning ikkinchi yarmida o‘quvchilarning uy vazifalari XAU/USD va EUR/USD grafiklarida tahlil qilinadi."
+    },
+    "10": {
+      "title": "Order blok va bozor strukturasi: BOS, CHoCH va breaker blok",
+      "coverTitle": "Order blok va bozor strukturasi",
+      "category": "Texnik tahlil",
+      "level": "ADVANCED",
+      "access": "PRO",
+      "motif": "orderblock",
+      "topics": ["Order blok qoidalari", "Ishlatilgan zonalar", "BOS va CHoCH", "Breaker blok", "XAU/USD amaliyoti"],
+      "summary": "Order blok — kuchli harakat boshlangan zona: uni to‘g‘ri belgilash qoidalari va bozor strukturasidagi BOS hamda CHoCH bilan birga ishlatish.",
+      "description": "Smart Money yondashuvining asosiy tushunchalaridan biri — order blok. Darsda sham chizmalari orqali kuchli impulsdan oldingi oxirgi qarama-qarshi sham qanday qilib order blokka aylanishi, uning chegaralari qanday belgilanishi va qaysi holatlarda order blokdan foydalanib bo‘lmasligi tushuntiriladi. Narx bir marta qaytib ishlatgan zonadan qayta foydalanilmasligi ham ko‘rsatiladi. So‘ng bozor strukturasi: BOS (struktura buzilishi) va CHoCH (xarakter o‘zgarishi), shuningdek breaker blok tushunchasi. Barcha misollar XAU/USD 30 daqiqalik va 1 soatlik grafiklarida."
+    },
+    "11": {
+      "title": "Amaliy tahlil: iqtisodiy yangiliklar, order blok va Fibonacci",
+      "coverTitle": "Amaliy tahlil: yangiliklar va zonalar",
+      "category": "Amaliy tahlillar",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "motif": "levels",
+      "topics": ["Uy vazifalari tahlili", "Forex Factory kalendari", "Yangilik va narx", "Order blok va Fibonacci", "XAU/USD, GBP/USD, EUR/NZD"],
+      "summary": "O‘tilgan mavzularni amalda qo‘llash: iqtisodiy kalendar bo‘yicha yangiliklarni kuzatish va grafikda order blok hamda Fibonacci zonalarini topish.",
+      "description": "Amaliy mashg‘ulot. Avval o‘quvchilarning uy vazifalari ko‘rib chiqiladi. So‘ng Investing.com va Forex Factory iqtisodiy kalendarlarida haftaning muhim yangiliklari topiladi, yangilik chiqishidan oldin va keyin bozor qanday harakatlanishi muhokama qilinadi. Grafik tahlilida order blok, Fibonacci darajalari, konsolidatsiya va Elliott to‘lqinlari birga qo‘llanadi. Misollar XAU/USD (1 soatlik va kunlik), GBP/USD va EUR/NZD grafiklarida."
+    },
+    "12": {
+      "title": "Amaliy mashg‘ulot: order blokni tez va to‘g‘ri topish",
+      "coverTitle": "Amaliyot: order blokni topish",
+      "category": "Amaliy tahlillar",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "motif": "zones",
+      "topics": ["Order blokni topish", "Ketma-ket order bloklar", "Likvidlik va reaksiya", "Trend chizig‘i", "XAU/USD va EUR/CAD"],
+      "summary": "Birinchi amaliy dars: grafikda order blokni tez va to‘g‘ri topish, uni likvidlik va trend chizig‘i bilan birga baholash.",
+      "description": "Kursning birinchi amaliy mashg‘uloti. Order blokdan foydalanish qoidalari qisqacha takrorlanadi va o‘quvchilarning vazifalari tekshiriladi. Bir nechta order blok ketma-ket kelganda qaysi biri tanlanishi, likvidlik olingandan keyingi reaksiya va trend chizig‘i bilan tasdiqlash ko‘rsatiladi. Misollar XAU/USD (30 daqiqalik va 1 soatlik) hamda EUR/CAD (1 soatlik) grafiklarida; EUR/CAD misolida order blok, sell-side likvidlik (SSL) va BISI (FVG) zonasi birga belgilanadi. Dars oxirida uy vazifasi beriladi."
+    },
+    "13": {
+      "title": "Bozor strukturasi: BOS va tasdiq bilan savdoga kirish",
+      "coverTitle": "Bozor strukturasi va tasdiqli kirish",
+      "category": "Strategiyalar",
+      "level": "ADVANCED",
+      "access": "PRO",
+      "motif": "structure",
+      "topics": ["Savdo intizomi", "BOS: struktura buzilishi", "Tasdiq bilan kirish", "Fibonacci va trend chizig‘i", "AUD/CHF va XAU/USD"],
+      "summary": "Bozor strukturasini (BOS) o‘qish va savdoga faqat tasdiq bilan kirish: bir nechta usulni bitta tahlilda birlashtirish.",
+      "description": "Dars savdo intizomi haqidagi suhbatdan boshlanadi: kuniga nechta bitim ochish va kamida ikkita sabab bo‘lmasa savdoga kirmaslik qoidasi. Asosiy mavzu — Smart Money yondashuvidagi bozor strukturasi: ko‘tarilish va pasayishda BOS (struktura buzilishi) qanday belgilanadi, struktura buzilgandan keyin narx orqaga qaytganda kirish nuqtasi qanday topiladi. Kirishni tasdiqlash uchun Fibonacci va trend chizig‘ining buzilishi qo‘shiladi — ikki-uch usulni bir-biriga moslashtirish ko‘rsatiladi. Misollar AUD/CHF (1 soatlik va 30 daqiqalik) va XAU/USD grafiklarida."
+    },
+    "14": {
+      "title": "Fibonacci va likvidlik: BSL va SSL oralig‘idagi zonalar",
+      "coverTitle": "Fibonacci va likvidlik zonalari",
+      "category": "Strategiyalar",
+      "level": "INTERMEDIATE",
+      "access": "PRO",
+      "motif": "fibonacci",
+      "topics": ["Fibonacci vositalari", "BSL va SSL darajalari", "Reaksiya zonalari", "Likvidlik oralig‘ida Fibonacci", "XAU/USD va GBP/USD"],
+      "summary": "Fibonacci’ni likvidlik darajalari bilan birga qo‘llash: avval BSL va SSL belgilanadi, so‘ng ular oralig‘ida reaksiya zonalari topiladi.",
+      "description": "Dars avvalgi kungi yangilikdan keyingi oltin (XAU/USD) harakatini ko‘rib chiqishdan boshlanadi. So‘ng Fibonacci’ning yana bir qo‘llanish usuli o‘rganiladi: grafikda avval buy-side (BSL) va sell-side (SSL) likvidlik darajalari belgilanadi, Fibonacci shu oraliqqa tortiladi va narx reaksiya beradigan zonalar aniqlanadi. TradingView’dagi Fibonacci vositalari (retracement, trend-based extension va boshqalar) ko‘rsatiladi. Misollar XAU/USD va GBP/USD 1 soatlik grafiklarida; dars oxirida uy vazifalari tahlil qilinadi."
+    },
+    "15": {
+      "title": "Inducement (IDM): likvidlik tuzog‘i va tasdiq bilan kirish",
+      "coverTitle": "Inducement: likvidlik tuzog‘i",
+      "category": "Texnik tahlil",
+      "level": "ADVANCED",
+      "access": "PRO",
+      "motif": "inducement",
+      "topics": ["Inducement (IDM)", "Impuls va qaytish", "Zonadan reaksiya", "Kichik taymfreymda tasdiq", "EUR/USD va XAU/USD"],
+      "summary": "Inducement — narx asosiy zonaga yetishidan oldin olinadigan «tuzoq» likvidlik: uni belgilash va kichik taymfreymdagi tasdiq bilan savdoga kirish.",
+      "description": "Smart Money yondashuvidagi inducement (IDM) tushunchasi: impulsdan keyingi birinchi kichik qaytish nuqtasi treyderlarni erta kirishga undaydi, narx esa ko‘pincha avval shu likvidlikni olib, keyin asosiy zonadan (order blokdan) reaksiya beradi. Darsda IDM’ni grafikda belgilash, u olinmaguncha savdoga shoshilmaslik va zona ishlagach kichik taymfreymga o‘tib tasdiq bilan kirish ko‘rsatiladi. Impuls va qaytish (korreksiya) harakatlarini ajratish ham muhokama qilinadi. Misollar EUR/USD va XAU/USD grafiklarida."
     }
   }
 }

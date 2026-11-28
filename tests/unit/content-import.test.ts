@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 // @ts-expect-error — plain ESM script without type declarations
-import { applyMeta, candlesSvg, cleanTitle, coverHtml, decideAction, markDuplicates, numberIn, orderEntries } from "../../scripts/content-import.mjs";
+import { applyMeta, candlesSvg, chartSvg, cleanTitle, coverHtml, decideAction, markDuplicates, numberIn, orderEntries } from "../../scripts/content-import.mjs";
 
 describe("content import: names and order", () => {
   it("reads lesson numbers written in different ways", () => {
@@ -96,6 +96,24 @@ describe("content import: covers", () => {
   it("draws the same chart for the same lesson and a different one for the next", () => {
     expect(candlesSvg(1)).toBe(candlesSvg(1));
     expect(candlesSvg(1)).not.toBe(candlesSvg(2));
+  });
+
+  it("draws every topic motif as its own chart, deterministically", () => {
+    const motifs = ["levels", "fibonacci", "channel", "double-top", "head-shoulders", "zones", "indicator", "risk", "liquidity", "volume", "range-breakout", "news", "waves", "orderblock", "structure", "inducement"];
+    const svgs = motifs.map((m) => chartSvg(8, m));
+    for (const [i, svg] of svgs.entries()) {
+      expect(svg).toMatch(/^<svg [^>]*viewBox="0 0 640 430"/);
+      expect(svg).not.toMatch(/NaN|undefined/);
+      expect(svg).toBe(chartSvg(8, motifs[i]));
+    }
+    expect(new Set(svgs).size).toBe(motifs.length);
+    expect(svgs.every((s) => s !== chartSvg(8, undefined))).toBe(true);
+    const waveLabels = [...chartSvg(8, "waves").matchAll(/<text[^>]*>(\d)<\/text>/g)].map((m) => m[1]);
+    expect(waveLabels).toEqual(["0", "1", "2", "3", "4", "5"]);
+  });
+
+  it("shows the padded lesson number when asked", () => {
+    expect(coverHtml({ number: 4, numberLabel: "04-DARS", title: "Stop loss", category: "Texnik tahlil", motif: "indicator" }, "/fonts")).toContain("04-DARS");
   });
 
   it("escapes titles and keeps Uzbek letters", () => {

@@ -5,7 +5,7 @@
  *
  *   node scripts/content-import.mjs plan    <archive.zip | folder> [--out content-import] [--free 1]
  *   node scripts/content-import.mjs plan    <archive.zip | folder> --meta meta.json   (one course, titles from meta)
- *   node scripts/content-import.mjs covers  [--out content-import]
+ *   node scripts/content-import.mjs covers  [--out content-import] [--width 1920] [--pad-number]
  *   node scripts/content-import.mjs prepare [--out content-import] [--allow-transcode]
  *   node scripts/content-import.mjs import  --site https://… [--out content-import] [--publish-courses]
  *   node scripts/content-import.mjs verify  --site https://… [--out content-import]
@@ -256,6 +256,8 @@ export function applyMeta(categories, meta) {
       category: m.category ?? course.category,
       ...(m.title ? { title: m.title } : {}),
       ...(m.coverTitle ? { coverTitle: m.coverTitle } : {}),
+      ...(m.motif ? { motif: m.motif } : {}),
+      ...(m.summary ? { summary: m.summary } : {}),
       description: m.description ?? l.description ?? null,
       level: m.level ?? l.level ?? null,
       access: m.access ?? l.access,
@@ -465,6 +467,200 @@ export function candlesSvg(number, width = 640, height = 430) {
   </svg>`;
 }
 
+/* Topic motifs drawn over the candles (lesson meta `motif`). Shapes and numbers only — no words, so
+ * nothing on a cover can be misspelt; the lesson number seeds the candles so every cover differs. */
+const GOLD = "#E4CB93";
+const SLATE = "#64748B";
+
+/** Candle series following `target(t)` (0 = top … 1 = bottom) — returns svg parts and the closes. */
+function candleSeries(number, width, height, target, count = 24) {
+  const rnd = seeded(number * 97 + 13);
+  const step = width / count;
+  let price = target(0) * height;
+  const parts = [];
+  const closes = [];
+  for (let i = 0; i < count; i++) {
+    const open = price;
+    const goal = target(i / (count - 1)) * height;
+    const close = Math.min(height * 0.94, Math.max(height * 0.06, open + (goal - open) * 0.75 + (rnd() - 0.5) * height * 0.08));
+    const high = Math.min(open, close) - (0.01 + rnd() * 0.045) * height;
+    const low = Math.max(open, close) + (0.01 + rnd() * 0.045) * height;
+    const x = i * step + step * 0.5;
+    const color = close < open ? "#C9A45C" : SLATE;
+    const opacity = (0.4 + (i / count) * 0.6).toFixed(2);
+    parts.push(
+      `<line x1="${x.toFixed(1)}" y1="${high.toFixed(1)}" x2="${x.toFixed(1)}" y2="${low.toFixed(1)}" stroke="${color}" stroke-width="2.2" opacity="${opacity}"/>` +
+        `<rect x="${(x - step * 0.3).toFixed(1)}" y="${Math.min(open, close).toFixed(1)}" width="${(step * 0.6).toFixed(1)}" height="${Math.max(4, Math.abs(close - open)).toFixed(1)}" rx="2.5" fill="${color}" opacity="${opacity}"/>`,
+    );
+    closes.push({ x, y: (open + close) / 2, high, low });
+    price = close;
+  }
+  return { parts, closes, step };
+}
+
+const hline = (y, w, color = GOLD, dash = "8 8", op = 0.75) => `<line x1="0" y1="${y.toFixed(1)}" x2="${w}" y2="${y.toFixed(1)}" stroke="${color}" stroke-width="2" stroke-dasharray="${dash}" opacity="${op}"/>`;
+const zone = (x, y, w, h, color, op) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${color}" opacity="${op}"/>`;
+const label = (x, y, text, color = GOLD) => `<text x="${x}" y="${y}" fill="${color}" font-family="Space Grotesk Variable, sans-serif" font-size="17" font-weight="600" opacity="0.9">${text}</text>`;
+const poly = (pts, color = GOLD, w = 3, op = 0.9, dash = "") => `<polyline points="${pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round" opacity="${op}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
+const seg = (x1, y1, x2, y2, color = GOLD, dash = "8 8", op = 0.75, w = 2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${color}" stroke-width="${w}" stroke-dasharray="${dash}" opacity="${op}"/>`;
+const dot = (x, y, color = GOLD) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="#0C111B" stroke="${color}" stroke-width="2.5" opacity="0.95"/>`;
+const star = (cx, cy, r, color = GOLD) => {
+  const pts = Array.from({ length: 10 }, (_, i) => {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r * 0.45 : r;
+    return `${(cx + rr * Math.cos(a)).toFixed(1)},${(cy + rr * Math.sin(a)).toFixed(1)}`;
+  });
+  return `<polygon points="${pts.join(" ")}" fill="${color}" opacity="0.9"/>`;
+};
+/** A target(t) that follows straight segments through [t, y] points (both 0…1). */
+const along = (points) => (t) => {
+  const i = Math.max(0, points.findIndex((p, k) => k > 0 && t <= p[0]) - 1);
+  const [t0, y0] = points[i], [t1, y1] = points[Math.min(points.length - 1, i + 1)];
+  return t1 === t0 ? y0 : y0 + ((y1 - y0) * (t - t0)) / (t1 - t0);
+};
+
+/** The cover chart for a lesson: candles plus the lesson's motif. Unknown/absent motif → shape by number. */
+export function chartSvg(number, motif, width = 640, height = 430) {
+  const W = width;
+  const H = height;
+  let target;
+  const over = [];
+  switch (motif) {
+    case "levels": {
+      target = (t) => 0.5 + Math.sin(t * 13) * 0.22;
+      over.push(hline(H * 0.26, W), hline(H * 0.74, W, SLATE, "8 8", 0.9));
+      break;
+    }
+    case "fibonacci": {
+      target = (t) => (t < 0.55 ? 0.85 - t * 1.35 : 0.11 + (t - 0.55) * 0.75);
+      over.push(zone(W - 72, 0, 72, H, "#0C111B", 0.35));
+      const top = H * 0.1, bottom = H * 0.86;
+      for (const [f, c] of [[0, GOLD], [0.236, SLATE], [0.382, GOLD], [0.5, SLATE], [0.618, GOLD], [1, SLATE]]) {
+        const y = top + (bottom - top) * f;
+        const text = f.toFixed(3).replace(/0+$/, "").replace(/\.$/, "") || "0";
+        over.push(hline(y, W, c, "4 6", 0.6), zone(W - 66, y - 13, 60, 24, "#0C111B", 0.85), label(W - 60, y + 5, text, c === GOLD ? GOLD : "#94A3B8"));
+      }
+      break;
+    }
+    case "channel": {
+      target = (t) => 0.78 - t * 0.55 + Math.sin(t * 16) * 0.07;
+      over.push(`<line x1="0" y1="${H * 0.9}" x2="${W}" y2="${H * 0.33}" stroke="${GOLD}" stroke-width="2.5" opacity="0.85"/>`, `<line x1="0" y1="${H * 0.62}" x2="${W}" y2="${H * 0.05}" stroke="${GOLD}" stroke-width="2" stroke-dasharray="8 8" opacity="0.6"/>`);
+      break;
+    }
+    case "double-top": {
+      target = (t) => 0.75 - Math.max(0, Math.sin(t * Math.PI * 2.0)) * 0.55 + t * 0.15;
+      over.push(hline(H * 0.2, W * 0.75, GOLD, "6 6", 0.7));
+      break;
+    }
+    case "head-shoulders": {
+      const pts = [0.75, 0.42, 0.62, 0.16, 0.6, 0.4, 0.82].map((y, i, a) => ({ x: (i / (a.length - 1)) * W, y: y * H }));
+      target = (t) => {
+        const f = t * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f));
+        return (pts[i].y + (pts[i + 1].y - pts[i].y) * (f - i)) / H;
+      };
+      over.push(poly(pts, GOLD, 2.5, 0.55, "2 0"), hline(H * 0.61, W, SLATE, "8 6", 0.9));
+      break;
+    }
+    case "zones": {
+      target = (t) => (t < 0.4 ? 0.3 + t * 1.1 : t < 0.55 ? 0.74 - (t - 0.4) * 2.6 : 0.35 + Math.sin(t * 20) * 0.06 - (t - 0.55) * 0.4);
+      over.push(zone(W * 0.36, H * 0.62, W * 0.64, H * 0.13, GOLD, 0.16), zone(W * 0.08, H * 0.18, W * 0.5, H * 0.1, SLATE, 0.28));
+      break;
+    }
+    case "indicator": {
+      target = (t) => 0.55 - t * 0.3 + Math.sin(t * 9) * 0.12;
+      const ma = [];
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40;
+        ma.push({ x: t * W, y: (0.6 - t * 0.3 + Math.sin(t * 9 - 0.6) * 0.08) * H * 0.72 });
+      }
+      const osc = [];
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40;
+        osc.push({ x: t * W, y: H * 0.86 + Math.sin(t * 14) * H * 0.07 });
+      }
+      over.push(poly(ma, GOLD, 2.5, 0.9), hline(H * 0.79, W, SLATE, "3 6", 0.6), hline(H * 0.93, W, SLATE, "3 6", 0.6), poly(osc, "#94A3B8", 2, 0.85));
+      return wrap(W, H, candleSeries(number, W, H * 0.72, (t) => 0.75 - t * 0.42 + Math.sin(t * 9) * 0.16).parts.join(""), over.join(""));
+    }
+    case "risk": {
+      target = (t) => 0.62 - Math.sin(t * 5) * 0.08 - t * 0.12;
+      const entry = H * 0.55;
+      over.push(zone(W * 0.45, H * 0.18, W * 0.5, entry - H * 0.18, GOLD, 0.16), zone(W * 0.45, entry, W * 0.5, H * 0.14, SLATE, 0.32), hline(entry, W, GOLD, "0", 0.9));
+      break;
+    }
+    case "liquidity": {
+      target = (t) => (t < 0.7 ? 0.45 + Math.sin(t * 17) * 0.12 : t < 0.78 ? 0.8 : 0.8 - (t - 0.78) * 2.6);
+      over.push(hline(H * 0.6, W * 0.72, GOLD, "4 6", 0.85));
+      break;
+    }
+    case "volume": {
+      target = (t) => 0.62 - t * 0.38 + Math.sin(t * 11) * 0.08;
+      const rnd = seeded(number + 3);
+      const bars = Array.from({ length: 24 }, (_, i) => {
+        const h = (0.05 + rnd() * 0.13) * H;
+        return zone(i * (W / 24) + W / 24 * 0.2, H - h, W / 24 * 0.6, h, i % 3 ? SLATE : GOLD, 0.35);
+      });
+      over.push(...bars);
+      return wrap(W, H, candleSeries(number, W, H * 0.76, target).parts.join(""), over.join(""));
+    }
+    case "range-breakout": {
+      // Consolidation box → false move below it → expansion (the "power of three").
+      target = along([[0, 0.5], [0.12, 0.56], [0.24, 0.46], [0.36, 0.56], [0.48, 0.48], [0.6, 0.76], [0.7, 0.6], [1, 0.1]]);
+      over.push(zone(W * 0.02, H * 0.38, W * 0.5, H * 0.24, SLATE, 0.22), seg(0, H * 0.62, W * 0.68, H * 0.62, GOLD, "6 6", 0.8));
+      break;
+    }
+    case "news": {
+      // Quiet market, the release time (dashed line, importance stars), then a strong move.
+      target = along([[0, 0.6], [0.15, 0.56], [0.3, 0.63], [0.45, 0.57], [0.55, 0.6], [0.66, 0.2], [0.8, 0.28], [1, 0.16]]);
+      const x = W * 0.57;
+      over.push(seg(x, H * 0.12, x, H, GOLD, "6 6", 0.85), star(x - 30, H * 0.06, 11), star(x, H * 0.06, 11), star(x + 30, H * 0.06, 11), zone(0, H * 0.5, x, H * 0.18, SLATE, 0.16));
+      break;
+    }
+    case "waves": {
+      // Impulse waves 0…5 with the wave-2 pullback level.
+      // Wave 0 starts past the chart's faded left edge so all six points are visible.
+      const p = [[0.3, 0.86], [0.44, 0.54], [0.53, 0.68], [0.74, 0.18], [0.83, 0.36], [0.98, 0.08]];
+      target = along([[0, 0.92], [0.15, 0.8], ...p, [1, 0.08]]);
+      const pts = p.map(([t, y]) => ({ x: t * W, y: y * H }));
+      over.push(poly(pts, GOLD, 2.5, 0.55), seg(pts[2].x - 40, pts[2].y, W, pts[2].y, SLATE, "6 6", 0.9));
+      pts.forEach((q, i) => over.push(dot(q.x, q.y), label(q.x - 5, i % 2 ? q.y - 16 : q.y + 30, String(i))));
+      break;
+    }
+    case "orderblock": {
+      // The last opposite candle before the impulse becomes a zone; the impulse breaks the previous high.
+      target = along([[0, 0.38], [0.28, 0.72], [0.34, 0.74], [0.52, 0.2], [0.72, 0.62], [1, 0.08]]);
+      over.push(zone(W * 0.3, H * 0.6, W * 0.7, H * 0.17, GOLD, 0.17), seg(0, H * 0.36, W * 0.62, H * 0.36, SLATE, "6 6", 0.95));
+      break;
+    }
+    case "structure": {
+      // Higher highs: every broken high is marked with a short dashed line.
+      const p = [[0, 0.84], [0.14, 0.6], [0.24, 0.7], [0.4, 0.44], [0.5, 0.54], [0.66, 0.28], [0.76, 0.38], [1, 0.1]];
+      target = along(p);
+      for (const k of [1, 3, 5]) over.push(seg(p[k][0] * W, p[k][1] * H, (p[k + 2][0] - 0.08) * W, p[k][1] * H, GOLD, "6 6", 0.85, 2.5));
+      over.push(poly(p.map(([t, y]) => ({ x: t * W, y: y * H })), GOLD, 2, 0.35));
+      break;
+    }
+    case "inducement": {
+      // A small pullback low (the inducement) is swept on the way into the zone, then price expands.
+      target = along([[0, 0.78], [0.26, 0.36], [0.34, 0.5], [0.46, 0.26], [0.64, 0.72], [1, 0.08]]);
+      over.push(seg(W * 0.3, H * 0.5, W * 0.72, H * 0.5, GOLD, "4 6", 0.9), zone(W * 0.04, H * 0.66, W * 0.96, H * 0.13, SLATE, 0.28));
+      break;
+    }
+    default: {
+      const shape = number % 3;
+      target = (t) => (shape === 1 ? 0.82 - t * 0.68 : shape === 2 ? (t < 0.45 ? 0.35 + t * 1.0 : 0.8 - (t - 0.45) * 1.25) : t < 0.62 ? 0.62 + Math.sin(t * 18) * 0.07 : 0.62 - (t - 0.62) * 1.35);
+    }
+  }
+  const series = candleSeries(number, W, H, target);
+  if (!motif) over.push(poly(series.closes, "url(#tl)", 2.5, 1));
+  return wrap(W, H, series.parts.join(""), over.join(""));
+}
+
+function wrap(W, H, candles, over) {
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="tl" x1="0" x2="1"><stop offset="0" stop-color="#E4CB93" stop-opacity="0"/><stop offset="1" stop-color="#E4CB93" stop-opacity="0.85"/></linearGradient></defs>
+    ${candles}${over}
+  </svg>`;
+}
+
 const LOGO_SVG = `<svg viewBox="0 0 40 40" width="52" height="52"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#E4CB93"/><stop offset="55%" stop-color="#C9A45C"/><stop offset="100%" stop-color="#8F6F33"/></linearGradient></defs><rect x="0.75" y="0.75" width="38.5" height="38.5" rx="11" fill="#101723" stroke="url(#g)" stroke-opacity="0.55" stroke-width="1.5"/><line x1="11" y1="21" x2="11" y2="31" stroke="#C9A45C" stroke-opacity="0.55" stroke-width="1.2"/><rect x="8.5" y="23" width="5" height="6" rx="1.2" fill="url(#g)" opacity="0.7"/><line x1="20" y1="13" x2="20" y2="29" stroke="#C9A45C" stroke-opacity="0.7" stroke-width="1.2"/><rect x="17.5" y="16" width="5" height="10" rx="1.2" fill="url(#g)" opacity="0.85"/><line x1="29" y1="7" x2="29" y2="24" stroke="#C9A45C" stroke-width="1.2"/><rect x="26.5" y="9" width="5" height="12" rx="1.2" fill="url(#g)"/></svg>`;
 
 /** The cover page (1280×720). Kept clear: the top-left corner (the catalog's "Bepul" badge), the
@@ -499,11 +695,11 @@ ${font("manrope")}${font("inter")}${font("space-grotesk")}
   .bar { position: absolute; left: 0; bottom: 0; height: 6px; width: 100%; background: linear-gradient(90deg, #8F6F33, #C9A45C 40%, #E4CB93 70%, transparent); opacity: .85; }
 </style></head><body><div class="cover">
   <div class="grid"></div>
-  <div class="chart">${candlesSvg(l.number)}</div>
+  <div class="chart">${l.motif ? chartSvg(l.number, l.motif) : candlesSvg(l.number)}</div>
   <div class="brand">${LOGO_SVG}<span><b>AU FOREX</b><i>ACADEMY</i></span></div>
   <div class="content">
     <span class="chip">${escapeHtml(l.category)}</span>
-    <div class="num">${l.number}-DARS</div>
+    <div class="num">${l.numberLabel ?? `${l.number}-DARS`}</div>
     <h1>${escapeHtml(l.coverTitle ?? l.title)}</h1>
     ${l.topics?.length ? `<div class="topics">${l.topics.slice(0, 5).map((t) => `<span>${escapeHtml(t)}</span>`).join("")}</div>` : ""}
   </div>
@@ -512,7 +708,7 @@ ${font("manrope")}${font("inter")}${font("space-grotesk")}
 }
 
 /** Renders covers/<NN>.jpg for every lesson of the plan and records them in plan.json. */
-async function drawCovers(out) {
+async function drawCovers(out, { width = 1280, padNumber = false } = {}) {
   const file = path.join(out, "plan.json");
   const p = JSON.parse(readFileSync(file, "utf8"));
   const fontsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "node_modules", "@fontsource-variable");
@@ -521,9 +717,11 @@ async function drawCovers(out) {
   const { chromium } = await import("playwright");
   const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROME_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROME_PATH } : {});
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    // The layout is designed at 1280×720; larger covers are the same page rendered sharper (1920 → ×1.5).
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: width / 1280 });
     for (const l of p.categories.flatMap((c) => c.courses.flatMap((k) => k.lessons))) {
       if (l.action === "skip") continue;
+      if (padNumber) l.numberLabel = `${String(l.number).padStart(2, "0")}-DARS`;
       const html = path.join(dir, `${String(l.number).padStart(2, "0")}.html`);
       writeFileSync(html, coverHtml(l, fontsDir));
       await page.goto(`file://${html}`);
@@ -814,7 +1012,8 @@ async function importToSite(out, site, publishNow) {
         await page.getByTestId("lesson-number").fill(String(l.number));
         if (l.level) await page.getByTestId("lesson-level").selectOption(l.level);
         await page.getByTestId("lesson-access").selectOption(l.access === "FREE" ? "FREE" : "PRO");
-        if (l.description) await page.getByLabel("Dars tavsifi").fill(l.description);
+        const text = [l.summary, l.description].filter(Boolean).join("\n\n");
+        if (text) await page.getByLabel("Dars tavsifi").fill(text);
         if (l.cover) {
           // The cover field has no test id; it is the form's only image input.
           await page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]').setInputFiles(path.join(out, l.cover));
@@ -869,6 +1068,8 @@ if (isMain) {
       out: { type: "string", default: "content-import" },
       free: { type: "string", default: "0" },
       meta: { type: "string" },
+      width: { type: "string" },
+      "pad-number": { type: "boolean", default: false },
       site: { type: "string" },
       "allow-transcode": { type: "boolean", default: false },
       "publish-courses": { type: "boolean", default: false },
@@ -881,7 +1082,7 @@ if (isMain) {
     if (command === "plan") {
       if (!source) throw new Error("Arxiv yoki papka yo‘lini bering");
       await plan(source, out, Number(values.free) || 0, values.meta ? path.resolve(values.meta) : null);
-    } else if (command === "covers") await drawCovers(out);
+    } else if (command === "covers") await drawCovers(out, { width: Number(values.width) || 1280, padNumber: values["pad-number"] });
     else if (command === "prepare") prepare(out, values["allow-transcode"]);
     else if (["import", "verify", "publish", "update-covers"].includes(command)) {
       if (!values.site) throw new Error("--site https://… kerak");
